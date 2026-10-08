@@ -1,0 +1,21 @@
+# 构建产物
+dist/
+
+# 界面核对 / 诊断产物
+tools/*.exe
+tools/*.png
+tools/*.txt
+tools/*.out
+tools/*.err
+*.lnk
+
+# 编辑器 / 系统
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+desktop.ini
+
+# 其它工具留下的日志
+debug.log
