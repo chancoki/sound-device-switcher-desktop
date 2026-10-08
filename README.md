@@ -5,6 +5,14 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)]()
 [![.NET](https://img.shields.io/badge/.NET%20Framework-4.x-purple.svg)]()
+[![Release](https://img.shields.io/github/v/release/chancoki/sound-device-switcher-desktop)](https://github.com/chancoki/sound-device-switcher-desktop/releases/latest)
+
+---
+
+## 下载
+
+[**⬇ 下载最新版 `AudioSwitch.exe`**](https://github.com/chancoki/sound-device-switcher-desktop/releases/latest)
+—— 单文件、免安装，双击即用；不需要 Node.js，也不需要额外安装运行时。
 
 ---
 
