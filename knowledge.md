@@ -42,6 +42,14 @@
 
 ## Conventions & Gotchas
 
+### 与权限相关（重要）
+
+- **本程序不需要管理员权限，也不要改成需要。** 实测：Medium 完整性（`S-1-16-8192`，非提权）的进程可以用与程序完全相同的机制（`WScript.Shell` → `IShellLink` + `IPersistFile.Save`）在桌面成功创建 `.lnk`。
+- **绝不能在 `app.manifest` 里声明 `requireAdministrator`。** 生成的快捷方式启动的是同一个 exe —— 一旦要求提权，用户**每次切换音频设备都会看到 UAC 弹窗**，程序基本不可用。因此保持 `asInvoker`，只在创建快捷方式被拒时按需提权一次。
+- 若出现 `E_ACCESSDENIED`（0x80070005），常见原因按概率排序：受控文件夹访问 / 杀毒软件的文件夹保护拦截、目标目录本身需要更高权限。`ShortcutFactory.IsAccessDenied()` 用 `Marshal.GetHRForException` 检查低位是否为 5，以此区分「权限失败」与「参数错误」；前者触发 GUI 的提权重试，CLI 也据此返回退出码 4。
+- 提权重试复用已有的 `--make-shortcut` 命令（`ProcessStartInfo.Verb = "runas"`），**必须显式传 `--target`**，否则管理员实例会把自己的路径当成快捷方式目标。用户取消 UAC 时抛 `Win32Exception`，`NativeErrorCode == 1223`。
+- 排查时注意：**被沙箱或杀软限制的进程会产生「假」的 `E_ACCESSDENIED`**。本次会话中 agent 启动的子进程只能写工作区，一度导致误判「程序需要管理员权限」；下结论前先用一个不受限的进程做同样操作对照。
+
 ### 验证 GUI 时的坑（血泪教训）
 
 - **跨进程读控件文本，`GetWindowText` 会返回过期缓存值，必须用 `WM_GETTEXT`。** 用 `GetWindowText` 读另一个进程里的 TextBox，拿到的是窗口管理器缓存的老值 —— 明明名称框已经更新了，读出来还是旧的，会让人误判成「功能失效」。`SendMessage(hwnd, WM_GETTEXT, capacity, buffer)` 才会真正向控件查询。同理，读 ListBox 的项要用 `LB_GETTEXT`，读索引用 `LB_GETCURSEL`。

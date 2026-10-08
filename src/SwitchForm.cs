@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Text;
 using System.Windows.Forms;
 
 namespace AudioSwitch
@@ -770,17 +771,107 @@ namespace AudioSwitch
             options.IconPath = _iconPathBox.Text.Trim();
             options.Hotkey = SelectedHotkey;
             options.Description = "将默认音频输出设备切换为 " + device.BestName;
+            options.DeviceId = device.Id;
+            options.DeviceName = device.BestName;
+            options.Roles = SelectedRoles;
+            options.Notify = _notifyCheck.Checked;
 
-            string error = ShortcutFactory.Create(options);
+            bool accessDenied;
+            string error = ShortcutFactory.Create(options, out accessDenied);
             if (error != null)
             {
                 SetStatus(error, StatusKind.Error);
+                if (accessDenied) OfferElevatedRetry(options);
                 return;
             }
 
             _lastCreatedLink = options.FullPath;
             _lastOpenFolder = directory;
             SetStatus("已生成快捷方式：" + options.FullPath, StatusKind.Success);
+        }
+
+        /// <summary>
+        /// The destination refused the write. Usually that is security software
+        /// (Controlled Folder Access, or an antivirus folder shield) or a folder the
+        /// user cannot write to — not something this program needs admin for in
+        /// general, so offer a one-off elevated retry rather than demanding it always.
+        /// </summary>
+        private void OfferElevatedRetry(ShortcutOptions options)
+        {
+            string message =
+                "无法在这个位置创建快捷方式：" + Environment.NewLine +
+                options.Directory + Environment.NewLine + Environment.NewLine +
+                "系统拒绝了写入。常见原因：" + Environment.NewLine +
+                "  · 杀毒软件 / Windows「受控文件夹访问」拦截了对该文件夹的写入" + Environment.NewLine +
+                "  · 该目录需要更高权限（例如 Program Files）" + Environment.NewLine + Environment.NewLine +
+                "可以改用别的保存位置（如桌面或「文档」），" + Environment.NewLine +
+                "也可以以管理员身份重试这一次操作。" + Environment.NewLine + Environment.NewLine +
+                "是否以管理员身份重试？";
+
+            DialogResult choice = MessageBox.Show(this, message, "创建快捷方式失败",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (choice != DialogResult.Yes) return;
+
+            string failure = RunElevatedCreate(options);
+            if (failure == null && File.Exists(options.FullPath))
+            {
+                _lastCreatedLink = options.FullPath;
+                _lastOpenFolder = options.Directory;
+                SetStatus("已生成快捷方式：" + options.FullPath, StatusKind.Success);
+                return;
+            }
+            SetStatus(failure ?? "管理员进程未能生成快捷方式。", StatusKind.Error);
+        }
+
+        /// <summary>
+        /// Re-run the same creation through an elevated copy of this program, using
+        /// the existing --make-shortcut command. Returns null on success, otherwise
+        /// a message describing what went wrong.
+        /// </summary>
+        private string RunElevatedCreate(ShortcutOptions options)
+        {
+            StringBuilder arguments = new StringBuilder();
+            arguments.Append("--make-shortcut");
+            arguments.Append(" --device ").Append(CommandLine.Quote(options.DeviceId));
+            arguments.Append(" --label ").Append(CommandLine.Quote(options.DeviceName));
+            arguments.Append(" --name ").Append(CommandLine.Quote(options.Name));
+            arguments.Append(" --dir ").Append(CommandLine.Quote(options.Directory));
+            arguments.Append(" --target ").Append(CommandLine.Quote(options.TargetPath));
+            arguments.Append(" --roles ").Append(CommandLine.RolesToString(options.Roles));
+            if (options.Notify) arguments.Append(" --notify");
+            if (!string.IsNullOrEmpty(options.IconPath))
+                arguments.Append(" --icon ").Append(CommandLine.Quote(options.IconPath));
+            if (!string.IsNullOrEmpty(options.Hotkey))
+                arguments.Append(" --hotkey ").Append(CommandLine.Quote(options.Hotkey));
+
+            try
+            {
+                ProcessStartInfo start = new ProcessStartInfo();
+                start.FileName = Application.ExecutablePath;
+                start.Arguments = arguments.ToString();
+                start.UseShellExecute = true;   // required for the runas verb
+                start.Verb = "runas";
+
+                using (Process elevated = Process.Start(start))
+                {
+                    if (elevated == null) return "无法启动管理员进程。";
+                    if (!elevated.WaitForExit(120000))
+                        return "管理员进程超时未返回。";
+                    if (elevated.ExitCode != 0)
+                        return "管理员进程返回错误码 " + elevated.ExitCode + "。";
+                }
+                return null;
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                // 1223 = ERROR_CANCELLED, i.e. the user dismissed the UAC prompt.
+                if (ex.NativeErrorCode == 1223) return "已取消管理员授权。";
+                return "无法以管理员身份启动：" + ex.Message;
+            }
+            catch (Exception ex)
+            {
+                return "以管理员身份重试失败：" + ex.Message;
+            }
         }
 
         /// <summary>

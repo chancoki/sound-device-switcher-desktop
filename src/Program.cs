@@ -257,11 +257,18 @@ namespace AudioSwitch
                 return 1;
             }
 
-            string error = ShortcutFactory.Create(shortcut);
+            bool accessDenied;
+            string error = ShortcutFactory.Create(shortcut, out accessDenied);
             if (error != null)
             {
                 Console.Error.WriteLine(error);
-                return 1;
+                if (accessDenied)
+                {
+                    Console.Error.WriteLine(
+                        "提示：目标文件夹拒绝了写入。可改用其他位置（如桌面、文档），"
+                        + "或以管理员身份运行本程序重试。");
+                }
+                return accessDenied ? 4 : 1;
             }
 
             Console.WriteLine("已生成快捷方式：" + shortcut.FullPath);
@@ -427,6 +434,8 @@ namespace AudioSwitch
             Console.WriteLine();
             Console.WriteLine("  --roles   all | console,multimedia,communications   （默认 all）");
             Console.WriteLine("  --hotkey  例如 Ctrl+Alt+1（快捷方式需位于桌面或开始菜单才会生效）");
+            Console.WriteLine();
+            Console.WriteLine("退出码：0 成功 · 1 参数或创建失败 · 2 找不到设备 · 3 设备未启用 · 4 目标文件夹拒绝写入");
             Console.WriteLine();
         }
     }

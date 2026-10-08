@@ -68,6 +68,15 @@ namespace AudioSwitch
         /// <summary>Optional global hotkey, e.g. "Ctrl+Alt+1". Empty for none.</summary>
         public string Hotkey = "";
 
+        // The three fields below are not used when writing the .lnk itself. They are
+        // kept so the GUI can rebuild an identical command line and retry the whole
+        // operation through an elevated copy of this program when the destination
+        // directory refuses the write.
+        public string DeviceId = "";
+        public string DeviceName = "";
+        public RoleSelection Roles = RoleSelection.All;
+        public bool Notify = true;
+
         public string FullPath
         {
             get { return Path.Combine(Directory, Name + ".lnk"); }
@@ -173,6 +182,18 @@ namespace AudioSwitch
         /// </summary>
         public static string Create(ShortcutOptions options)
         {
+            bool ignored;
+            return Create(options, out ignored);
+        }
+
+        /// <summary>
+        /// Write the .lnk. Returns null on success or a human-readable error message.
+        /// <paramref name="accessDenied"/> reports whether the destination directory
+        /// refused the write, which the caller can offer to retry elevated.
+        /// </summary>
+        public static string Create(ShortcutOptions options, out bool accessDenied)
+        {
+            accessDenied = false;
             if (options == null) return "缺少快捷方式参数。";
 
             string name = SanitizeFileName(options.Name);
@@ -212,6 +233,7 @@ namespace AudioSwitch
             }
             catch (Exception ex)
             {
+                accessDenied = IsAccessDenied(ex);
                 return "创建快捷方式失败：" + ex.Message;
             }
             finally
@@ -222,6 +244,28 @@ namespace AudioSwitch
 
             if (!File.Exists(linkPath)) return "快捷方式创建后未找到文件：" + linkPath;
             return null;
+        }
+
+        /// <summary>
+        /// True when the failure was a permission denial rather than a bad argument.
+        /// The shell surfaces it as E_ACCESSDENIED (0x80070005) wrapped in a
+        /// COMException, so the raw HRESULT has to be inspected.
+        /// </summary>
+        public static bool IsAccessDenied(Exception error)
+        {
+            if (error == null) return false;
+            if (error is UnauthorizedAccessException) return true;
+
+            try
+            {
+                int hresult = Marshal.GetHRForException(error);
+                if ((hresult & 0xFFFF) == 5) return true;              // ERROR_ACCESS_DENIED
+                if ((uint)hresult == 0x80070005) return true;          // E_ACCESSDENIED
+            }
+            catch (Exception)
+            {
+            }
+            return false;
         }
     }
 }

@@ -58,9 +58,20 @@ namespace AudioSwitch
         /// </summary>
         public static string BuildSwitchArguments(AudioEndpoint device, bool notify, RoleSelection roles)
         {
+            if (device == null) return "";
+            return BuildSwitchArguments(device.Id, device.BestName, notify, roles);
+        }
+
+        /// <summary>
+        /// The same argument string built from raw values, so the GUI can rebuild an
+        /// identical command line for an elevated retry without an endpoint object.
+        /// </summary>
+        public static string BuildSwitchArguments(string deviceId, string label, bool notify,
+                                                  RoleSelection roles)
+        {
             StringBuilder builder = new StringBuilder();
-            builder.Append("--switch ").Append(Quote(device.Id));
-            builder.Append(" --label ").Append(Quote(device.BestName));
+            builder.Append("--switch ").Append(Quote(deviceId));
+            builder.Append(" --label ").Append(Quote(label));
             builder.Append(" --roles ").Append(RolesToString(roles));
             if (notify) builder.Append(" --notify");
             return builder.ToString();
