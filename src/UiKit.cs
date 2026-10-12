@@ -630,15 +630,36 @@ namespace AudioSwitch
             ShowMenu();
         }
 
+        private void EnsureMenu()
+        {
+            if (_menu != null) return;
+
+            _menu = new ContextMenuStrip();
+            _menu.Renderer = new ThemedMenuRenderer();
+            _menu.ShowImageMargin = false;
+            _menu.Font = Theme.Body;
+            _menu.BackColor = Theme.Card;
+            _menu.ForeColor = Theme.TextPrimary;
+
+            // Only clear the "open" flag here. Disposing the drop-down inside its own
+            // Closed event is fatal: ToolStripManager's modal message filter still
+            // holds a reference to it as the active drop-down and touches it again
+            // while unwinding, which throws ObjectDisposedException
+            // ("无法访问已释放的对象。对象名:"ContextMenuStrip"") and takes the whole
+            // app down. The menu is disposed with the control instead.
+            _menu.Closed += delegate { _menuOpen = false; };
+        }
+
         private void ShowMenu()
         {
-            ContextMenuStrip menu = new ContextMenuStrip();
-            menu.Renderer = new ThemedMenuRenderer();
-            menu.ShowImageMargin = false;
-            menu.Font = Theme.Body;
-            menu.BackColor = Theme.Card;
-            menu.ForeColor = Theme.TextPrimary;
+            if (_menuOpen) return;
 
+            EnsureMenu();
+
+            // Rebuild the items so the current value is the one marked as selected.
+            // This also disposes the previous items, which is safe here because the
+            // menu is closed (guarded above) rather than mid-close.
+            _menu.Items.Clear();
             for (int i = 0; i < _items.Length; i++)
             {
                 int index = i;
@@ -646,12 +667,25 @@ namespace AudioSwitch
                 item.ForeColor = Theme.TextPrimary;
                 item.Tag = index == _selected ? "current" : null;
                 item.Click += delegate { SelectedIndex = index; };
-                menu.Items.Add(item);
+                _menu.Items.Add(item);
             }
 
-            menu.Closed += delegate { menu.Dispose(); };
-            menu.Show(this, new Point(0, Height + Theme.S(4)));
+            _menuOpen = true;
+            _menu.Show(this, new Point(0, Height + Theme.S(4)));
         }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _menu != null)
+            {
+                _menu.Dispose();
+                _menu = null;
+            }
+            base.Dispose(disposing);
+        }
+
+        private ContextMenuStrip _menu;
+        private bool _menuOpen;
 
         protected override void OnPaint(PaintEventArgs e)
         {

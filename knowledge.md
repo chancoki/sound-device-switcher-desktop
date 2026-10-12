@@ -109,6 +109,8 @@
 - 滚动会让行在**静止的光标下**移动，此时不会收到 `MouseMove`，因此 `WndProc` 里处理 `WM_VSCROLL`/`WM_MOUSEWHEEL` 后必须调用 `ResyncHover()` 重新判断光标落在哪一行。
 - 不要在原生 ListBox 上加 `ControlStyles.UserPaint`：那会让 WinForms 自己绘制而不是交给原生控件，反而抑制 `OnDrawItem`。`OptimizedDoubleBuffer` 是安全的抗闪烁选项。
 - 原生 `TextBox` / `ComboBox` 无法真正主题化（`ComboBox` 的下拉按钮尤其）。因此用 `RoundedField`（内嵌无边框 `TextBox`）和 `DropdownField`（自绘 + `ContextMenuStrip` 下拉）替代。**这两个控件不是 `TextBox`/`ComboBox`，`TextChanged`、`SelectedIndex`、`Text` 等接口由它们自己提供**；改动调用方时注意 `RoundedField.TextChangedHandler` 与 `DropdownField.SelectionChanged` 是自定义事件。
+- ⚠️ **绝对不要在 `ContextMenuStrip.Closed` 事件里 `Dispose()` 这个菜单本身。** `ToolStripManager` 的模态消息过滤器在 `Closed` 返回**之后**仍把该下拉当作「当前活动下拉」继续操作它，此时对象已释放，会抛 `ObjectDisposedException`（「无法访问已释放的对象。对象名:"ContextMenuStrip"」）。异常发生在消息泵内部，`Application.ThreadException` 兜不住，**整个程序会以「程序启动失败」对话框崩掉** —— 用户点一下快捷键下拉框就中招。正确做法：菜单实例**复用**，`Closed` 里只清状态标志（`_menuOpen = false`），真正的 `Dispose` 放到控件的 `Dispose(bool)` 里。复现与验证：连续开关菜单 20 次不崩、`_menuOpen` 不卡在 `true`、`form.Dispose()` 干净。
+- `ShowMenu` 必须加「已打开」守卫（`_menuOpen`），否则重复 `Show()` 会叠加出多个下拉。
 - 圆角控件清屏必须用 `Theme.BackdropOf(this, 回退色)`，不能用自己的 `BackColor`，否则四角会露出方块（见下条历史教训）。
 - `NativeTheme` 里的 DWM 调用全是尽力而为：Windows 10 及更早会直接拒绝这些属性，此时保留方形窗口和浅色配色，不影响功能。
 - 系统强调色可能是很亮的颜色，所以主按钮文字用 `Theme.ReadableOn(强调色)` 在黑白之间选，避免出现白字黄底。
