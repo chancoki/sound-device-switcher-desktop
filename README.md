@@ -85,7 +85,7 @@
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-构建产物为 `dist\AudioSwitch.exe`（约 158 KB）。构建过程只使用 Windows 自带的 C# 编译器（`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`），**不联网、不下载、不需要 SDK**。
+构建产物为 `dist\AudioSwitch.exe`（约 181 KB）。构建过程只使用 Windows 自带的 C# 编译器（`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`），**不联网、不下载、不需要 SDK**。
 
 首次构建时还会自动生成应用图标 `src\app.ico`（由 `tools\IconGen.cs` 绘制并打包成 8 种尺寸的 ico）。之后可用 `-SkipIcon` 跳过：
 

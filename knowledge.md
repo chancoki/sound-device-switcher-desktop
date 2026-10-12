@@ -4,7 +4,7 @@
 
 **音频输出切换 · 快捷方式生成器** — 一个单文件 Windows 桌面应用，用于生成「切换默认音频输出设备」的快捷方式。
 
-- 纯原生 C# / WinForms，构建产物只有一个 `dist\AudioSwitch.exe`（约 158 KB）
+- 纯原生 C# / WinForms，构建产物只有一个 `dist\AudioSwitch.exe`（约 181 KB）
 - 无需 Node.js、无需安装 .NET 运行时、不依赖 NirCmd
 - 与 CLI 姊妹项目 `sound-device-switcher`（基于 NirCmd）解决同一个问题，但改用端点 ID 精确定位设备
 
