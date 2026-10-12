@@ -103,7 +103,11 @@
 
 ### 与现代外观相关（Windows 11 风格）
 
-- **原生 `ListBox` 有一条去不掉的非客户区滚动条槽。** 即使清掉 `WS_VSCROLL`，控件仍保留约 17px 的槽位（实测 `width=700` → `clientW=683`），并且**用系统颜色绘制，无法通过 `BackColor` 改**——深色主题下会露出一条白边。解决办法：把列表放进一个 `Panel` 视口并让列表比视口**宽出 24px**，超出的部分连同那条槽一起被裁掉；行宽用 `VisibleWidth`（= 视口客户区宽度）绘制，右侧再放自绘的 `ThinScrollBar`。滚动本身不受影响（滚轮、键盘、`TopIndex` 照常）。
+- **原生 `ListBox` 有一条去不掉的非客户区滚动条槽。** 即使清掉 `WS_VSCROLL`，控件仍保留约 17px 的槽位（实测 `width=700` → `clientW=683`），并且**用系统颜色绘制，无法通过 `BackColor` 改**——深色主题下会露出一条白边。解决办法：把列表放进一个 `Panel` 视口并让列表比视口**宽出 24px**，超出的部分连同那条槽一起被裁掉；行宽用 `VisibleWidth`（= 视口客户区宽度）绘制，右侧再放自绘的 `ThinScrollBar`。
+- ⚠️ **千万不要为了藏这条槽而清掉 `WS_VSCROLL`。** ListBox 只在「自己认为有滚动条要移动」时才处理 `WM_MOUSEWHEEL`，去掉该样式会让**滚轮彻底失效**（键盘、拖动自绘滚动条也不受影响）。这是一个已经犯过的错误：早期版本用 `SetWindowLong(..., style & ~WS_VSCROLL)` 藏槽，结果 10 项只显示 3 行却完全滚不动，而注释里还写着「滚动不受影响」。**正确做法是保留 `WS_VSCROLL`，只用几何裁剪藏槽。** 复现与验证：`LB_GETTOPINDEX` 在发 `WM_MOUSEWHEEL` 前后应当变化（实测 `0→2→4→6→7`，反向 `7→5→3→1→0`）。
+- **悬停高亮不要用整控件 `Invalidate()`。** `OnMouseMove` 里若整控件重绘，鼠标每跨一行都会把所有可见行擦掉重画，已选项会跟着闪（用户描述为「颜色抖动」）。应当只重绘外观真正变化的**两行**（旧的与新的悬停行），见 `DeviceListBox.InvalidateRow()`；移出、滚动后重算悬停同理。
+- 滚动会让行在**静止的光标下**移动，此时不会收到 `MouseMove`，因此 `WndProc` 里处理 `WM_VSCROLL`/`WM_MOUSEWHEEL` 后必须调用 `ResyncHover()` 重新判断光标落在哪一行。
+- 不要在原生 ListBox 上加 `ControlStyles.UserPaint`：那会让 WinForms 自己绘制而不是交给原生控件，反而抑制 `OnDrawItem`。`OptimizedDoubleBuffer` 是安全的抗闪烁选项。
 - 原生 `TextBox` / `ComboBox` 无法真正主题化（`ComboBox` 的下拉按钮尤其）。因此用 `RoundedField`（内嵌无边框 `TextBox`）和 `DropdownField`（自绘 + `ContextMenuStrip` 下拉）替代。**这两个控件不是 `TextBox`/`ComboBox`，`TextChanged`、`SelectedIndex`、`Text` 等接口由它们自己提供**；改动调用方时注意 `RoundedField.TextChangedHandler` 与 `DropdownField.SelectionChanged` 是自定义事件。
 - 圆角控件清屏必须用 `Theme.BackdropOf(this, 回退色)`，不能用自己的 `BackColor`，否则四角会露出方块（见下条历史教训）。
 - `NativeTheme` 里的 DWM 调用全是尽力而为：Windows 10 及更早会直接拒绝这些属性，此时保留方形窗口和浅色配色，不影响功能。

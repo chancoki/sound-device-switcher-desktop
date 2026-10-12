@@ -724,13 +724,14 @@ namespace AudioSwitch
     }
 
     /// <summary>
-    /// A thin, rounded scroll indicator in the Windows 11 style. The host list
-    /// keeps its native scrolling (wheel, keys, drag) and simply reports changes;
-    /// this control mirrors them and can also be dragged directly.
+    /// A thin, rounded scroll indicator in the Windows 11 style. The device list
+    /// keeps its native scrolling (wheel, keys, page keys) and reports every change
+    /// through <c>ScrollChanged</c>; this control mirrors that state and can also be
+    /// dragged or clicked to drive the list.
     /// </summary>
     internal class ThinScrollBar : Panel
     {
-        private ListBox _target;
+        private DeviceListBox _target;
         private bool _dragging;
         private int _dragOffset;
 
@@ -743,7 +744,7 @@ namespace AudioSwitch
             Width = Theme.S(6);
         }
 
-        public void Attach(ListBox target)
+        public void Attach(DeviceListBox target)
         {
             _target = target;
         }
@@ -765,10 +766,8 @@ namespace AudioSwitch
             if (_target == null || Height <= 0) return false;
 
             int count = _target.Items.Count;
-            int itemHeight = _target.ItemHeight;
-            int viewHeight = _target.ClientSize.Height;
-            int visible = itemHeight > 0 ? viewHeight / itemHeight : 0;
-            if (count <= 0 || visible <= 0 || count <= visible) return false;
+            int visible = _target.VisibleRowCount;
+            if (count <= 0 || count <= visible) return false;
 
             int track = Height;
             int minThumb = Theme.S(30);
@@ -776,7 +775,7 @@ namespace AudioSwitch
             if (thumbHeight > track) thumbHeight = track;
 
             int maxTop = track - thumbHeight;
-            int maxFirst = count - visible;
+            int maxFirst = _target.MaxTopIndex;
             int first = _target.TopIndex;
             if (first < 0) first = 0;
             if (first > maxFirst) first = maxFirst;
@@ -817,7 +816,7 @@ namespace AudioSwitch
             else
             {
                 // Clicking the track pages towards the click.
-                _target.TopIndex = Math.Max(0, _target.TopIndex + (e.Y < top ? -1 : 1));
+                _target.ScrollByRows(e.Y < top ? -_target.VisibleRowCount : _target.VisibleRowCount);
             }
             Invalidate();
         }
@@ -830,20 +829,19 @@ namespace AudioSwitch
             int top, height;
             if (!Geometry(out top, out height)) return;
 
-            int track = Height;
-            int maxTop = track - height;
+            int maxTop = Height - height;
             if (maxTop <= 0) return;
 
             int desired = e.Y - _dragOffset;
             if (desired < 0) desired = 0;
             if (desired > maxTop) desired = maxTop;
 
-            int count = _target.Items.Count;
-            int visible = _target.ItemHeight > 0
-                ? _target.ClientSize.Height / _target.ItemHeight : 1;
-            int maxFirst = Math.Max(1, count - visible);
+            int maxFirst = _target.MaxTopIndex;
+            if (maxFirst <= 0) return;
 
-            _target.TopIndex = (int)Math.Round((double)desired / maxTop * maxFirst);
+            // Proportional mapping, so dragging the thumb to either end reaches the
+            // first/last row exactly instead of stalling one row short.
+            _target.ScrollToRow((int)Math.Round((double)desired / maxTop * maxFirst));
             Invalidate();
         }
 
@@ -872,7 +870,9 @@ namespace AudioSwitch
         public const int DesignRowHeight = 54;
 
         private const int GWL_STYLE = -16;
+        private const int GWL_EXSTYLE = -20;
         private const int WS_VSCROLL = 0x00200000;
+        private const int WS_EX_COMPOSITED = 0x02000000;
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -894,7 +894,12 @@ namespace AudioSwitch
         public int VisibleWidth
         {
             get { return _visibleWidth > 0 ? _visibleWidth : ClientSize.Width; }
-            set { _visibleWidth = value; Invalidate(); }
+            set
+            {
+                if (value == _visibleWidth) return;
+                _visibleWidth = value;
+                Invalidate();
+            }
         }
 
         private int _visibleWidth;
@@ -907,6 +912,10 @@ namespace AudioSwitch
             IntegralHeight = false;
             BackColor = Theme.Card;
             Font = Theme.Body;
+            // OptimizedDoubleBuffer is the safe anti-flicker option for a native
+            // ListBox. Do NOT add ControlStyles.UserPaint here: that asks WinForms
+            // to paint the control itself instead of the native control, which
+            // suppresses the owner-draw notifications the rows depend on.
             SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
         }
 
@@ -932,22 +941,62 @@ namespace AudioSwitch
         {
             base.OnHandleCreated(e);
 
-            // Drop the classic scrollbar; ThinScrollBar draws a modern one beside us.
-            // Scrolling itself is untouched — wheel, keys and TopIndex all still work.
-            int style = GetWindowLong(Handle, GWL_STYLE);
-            SetWindowLong(Handle, GWL_STYLE, style & ~WS_VSCROLL);
+            // WS_VSCROLL must STAY: the ListBox needs it for wheel, keyboard and
+            // page scrolling. Removing it (as an earlier revision did) silently
+            // kills the wheel entirely, because the control only handles
+            // WM_MOUSEWHEEL while it believes it has a scrollbar to move.
+            //
+            // The gutter it creates is painted with the system colour and cannot be
+            // themed, so it is hidden by geometry instead: the list is made wider
+            // than the viewport that clips it (see VisibleWidth), which puts the
+            // gutter outside the visible area while scrolling keeps working.
+            //
+            // WS_EX_COMPOSITED double-buffers the whole control including the
+            // non-client gutter, so hovering no longer flashes the selection row.
+            int exStyle = GetWindowLong(Handle, GWL_EXSTYLE);
+            SetWindowLong(Handle, GWL_EXSTYLE, exStyle | WS_EX_COMPOSITED);
         }
 
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
 
-            // WM_VSCROLL, WM_MOUSEWHEEL, WM_KEYDOWN, WM_LBUTTONDOWN/UP
-            if (m.Msg == 0x0115 || m.Msg == 0x020A || m.Msg == 0x0100
-                || m.Msg == 0x0201 || m.Msg == 0x0202)
+            const int WM_VSCROLL = 0x0115;
+            const int WM_MOUSEWHEEL = 0x020A;
+            const int WM_KEYDOWN = 0x0100;
+            const int WM_LBUTTONDOWN = 0x0201;
+            const int WM_LBUTTONUP = 0x0202;
+
+            if (m.Msg == WM_VSCROLL || m.Msg == WM_MOUSEWHEEL || m.Msg == WM_KEYDOWN
+                || m.Msg == WM_LBUTTONDOWN || m.Msg == WM_LBUTTONUP)
             {
+                // Scrolling moves the rows under a stationary pointer, so the hovered
+                // row must be recomputed — no MouseMove arrives in that case.
+                if (m.Msg != WM_LBUTTONDOWN && m.Msg != WM_LBUTTONUP) ResyncHover();
+
                 if (ScrollChanged != null) ScrollChanged(this, EventArgs.Empty);
             }
+        }
+
+        /// <summary>Recompute which row is under the cursor after the view moved.</summary>
+        private void ResyncHover()
+        {
+            int index = -1;
+            try
+            {
+                Point client = PointToClient(Cursor.Position);
+                if (ClientRectangle.Contains(client)) index = IndexFromPoint(client);
+            }
+            catch (Exception)
+            {
+            }
+
+            if (index == _hoverIndex) return;
+
+            int previous = _hoverIndex;
+            _hoverIndex = index;
+            InvalidateRow(previous);
+            InvalidateRow(_hoverIndex);
         }
 
         public void SetDefaultIds(IEnumerable<string> ids)
@@ -977,8 +1026,14 @@ namespace AudioSwitch
             int index = IndexFromPoint(e.Location);
             if (index != _hoverIndex)
             {
+                int previous = _hoverIndex;
                 _hoverIndex = index;
-                Invalidate();
+
+                // Repaint only the two rows whose appearance changed. A whole-control
+                // Invalidate() here redraws every visible row, which makes the
+                // selected row visibly flash while the pointer moves down the list.
+                InvalidateRow(previous);
+                InvalidateRow(_hoverIndex);
             }
             base.OnMouseMove(e);
         }
@@ -987,10 +1042,72 @@ namespace AudioSwitch
         {
             if (_hoverIndex != -1)
             {
+                int previous = _hoverIndex;
                 _hoverIndex = -1;
-                Invalidate();
+                InvalidateRow(previous);
             }
             base.OnMouseLeave(e);
+        }
+
+        /// <summary>
+        /// Repaint a single row. Indices outside the item range mean "no row", which
+        /// needs no repaint at all — repainting everything there would reintroduce the
+        /// flash on the very first hover (previous index is -1).
+        /// </summary>
+        private void InvalidateRow(int index)
+        {
+            if (index < 0 || index >= Items.Count) return;
+            if (ItemHeight <= 0) return;
+
+            int top = (index - TopIndex) * ItemHeight;
+            // Off-screen rows need no repaint at all.
+            if (top + ItemHeight <= 0 || top >= ClientSize.Height) return;
+
+            Invalidate(new Rectangle(0, top, Math.Max(1, VisibleWidth), ItemHeight));
+        }
+
+        /// <summary>Number of whole rows that fit in the viewport.</summary>
+        public int VisibleRowCount
+        {
+            get
+            {
+                if (ItemHeight <= 0) return 1;
+                int rows = ClientSize.Height / ItemHeight;
+                return rows < 1 ? 1 : rows;
+            }
+        }
+
+        /// <summary>Scroll by whole rows, clamped. Used by the thin scrollbar.</summary>
+        public void ScrollByRows(int rows)
+        {
+            int max = Math.Max(0, Items.Count - VisibleRowCount);
+            int target = TopIndex + rows;
+            if (target < 0) target = 0;
+            if (target > max) target = max;
+            if (target == TopIndex) return;
+
+            TopIndex = target;
+            Invalidate();
+            if (ScrollChanged != null) ScrollChanged(this, EventArgs.Empty);
+        }
+
+        /// <summary>Move the visible window to an absolute first row, clamped.</summary>
+        public void ScrollToRow(int first)
+        {
+            int max = Math.Max(0, Items.Count - VisibleRowCount);
+            if (first < 0) first = 0;
+            if (first > max) first = max;
+            if (first == TopIndex) return;
+
+            TopIndex = first;
+            Invalidate();
+            if (ScrollChanged != null) ScrollChanged(this, EventArgs.Empty);
+        }
+
+        /// <summary>Largest valid first-row index (0 when everything fits).</summary>
+        public int MaxTopIndex
+        {
+            get { return Math.Max(0, Items.Count - VisibleRowCount); }
         }
 
         protected override void OnDrawItem(DrawItemEventArgs e)
