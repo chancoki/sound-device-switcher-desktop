@@ -231,8 +231,7 @@ namespace AudioSwitch
 
             ShortcutOptions shortcut = new ShortcutOptions();
             shortcut.Directory = CommandLine.Get(options, "dir");
-            if (string.IsNullOrEmpty(shortcut.Directory))
-                shortcut.Directory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrEmpty(shortcut.Directory)) shortcut.Directory = ShellFolders.Desktop();
 
             shortcut.Name = CommandLine.Get(options, "name");
             if (string.IsNullOrEmpty(shortcut.Name)) shortcut.Name = device.BestName;

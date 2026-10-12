@@ -1,6 +1,11 @@
-// UiKit.cs — shared visual language: colours, fonts and the few custom controls
-// the form is built from. Hand-drawn rather than designer-generated so the whole
-// app stays a handful of readable source files with no .resx to keep in sync.
+// UiKit.cs — the shared visual language: palette, typography and the handful of
+// owner-drawn controls the window is built from.
+//
+// The look follows the Windows 11 design language (Fluent): a light/dark palette
+// picked from the user's app theme, 8px rounded surfaces, subtle 1px borders
+// instead of heavy frames, and the system accent colour for primary actions.
+// Everything is hand-drawn so the app stays a few readable source files with no
+// .resx or designer file to keep in sync.
 
 using System;
 using System.Collections.Generic;
@@ -14,6 +19,95 @@ using System.Windows.Forms;
 
 namespace AudioSwitch
 {
+    /// <summary>
+    /// Every colour for one theme. Windows 11 ships a light and a dark variant of
+    /// each surface, so the palette is chosen once at startup and read through
+    /// <see cref="Theme"/> from then on.
+    /// </summary>
+    internal sealed class Palette
+    {
+        public Color Window;
+        public Color Card;
+        public Color CardBorder;
+        public Color Shadow;
+        public Color Layer;
+        public Color LayerHover;
+        public Color LayerPressed;
+        public Color Accent;
+        public Color AccentHover;
+        public Color AccentPressed;
+        public Color AccentSoft;
+        public Color OnAccent;
+        public Color TextPrimary;
+        public Color TextSecondary;
+        public Color TextMuted;
+        public Color Success;
+        public Color Warning;
+        public Color Danger;
+        public Color Separator;
+        public Color RowHover;
+        public Color DisabledFill;
+        public Color DisabledText;
+
+        public static Palette Create(bool dark, Color accent)
+        {
+            Palette p = new Palette();
+
+            if (dark)
+            {
+                p.Window = Color.FromArgb(0x20, 0x20, 0x20);
+                p.Card = Color.FromArgb(0x2B, 0x2B, 0x2B);
+                p.CardBorder = Color.FromArgb(0x3A, 0x3A, 0x3A);
+                p.Shadow = Color.FromArgb(0x40, 0x00, 0x00, 0x00);
+                p.Layer = Color.FromArgb(0x32, 0x32, 0x32);
+                p.LayerHover = Color.FromArgb(0x3D, 0x3D, 0x3D);
+                p.LayerPressed = Color.FromArgb(0x2A, 0x2A, 0x2A);
+                p.Accent = accent;
+                p.AccentHover = Theme.Blend(accent, Color.White, 0.14F);
+                p.AccentPressed = Theme.Blend(accent, Color.Black, 0.16F);
+                p.AccentSoft = Theme.Blend(accent, p.Card, 0.78F);
+                p.OnAccent = Theme.ReadableOn(accent);
+                p.TextPrimary = Color.FromArgb(0xFF, 0xFF, 0xFF);
+                p.TextSecondary = Color.FromArgb(0xC8, 0xC8, 0xC8);
+                p.TextMuted = Color.FromArgb(0x99, 0x99, 0x99);
+                p.Success = Color.FromArgb(0x6C, 0xCB, 0x5A);
+                p.Warning = Color.FromArgb(0xFD, 0xB9, 0x00);
+                p.Danger = Color.FromArgb(0xFF, 0x99, 0xA4);
+                p.Separator = Color.FromArgb(0x3A, 0x3A, 0x3A);
+                p.RowHover = Color.FromArgb(0x35, 0x35, 0x35);
+                p.DisabledFill = Color.FromArgb(0x2E, 0x2E, 0x2E);
+                p.DisabledText = Color.FromArgb(0x6E, 0x6E, 0x6E);
+            }
+            else
+            {
+                p.Window = Color.FromArgb(0xF3, 0xF3, 0xF3);
+                p.Card = Color.FromArgb(0xFF, 0xFF, 0xFF);
+                p.CardBorder = Color.FromArgb(0xE5, 0xE5, 0xE5);
+                p.Shadow = Color.FromArgb(0x1A, 0x00, 0x00, 0x00);
+                p.Layer = Color.FromArgb(0xFF, 0xFF, 0xFF);
+                p.LayerHover = Color.FromArgb(0xF7, 0xF7, 0xF7);
+                p.LayerPressed = Color.FromArgb(0xED, 0xED, 0xED);
+                p.Accent = accent;
+                p.AccentHover = Theme.Blend(accent, Color.Black, 0.10F);
+                p.AccentPressed = Theme.Blend(accent, Color.Black, 0.22F);
+                p.AccentSoft = Theme.Blend(accent, p.Card, 0.88F);
+                p.OnAccent = Theme.ReadableOn(accent);
+                p.TextPrimary = Color.FromArgb(0x1A, 0x1A, 0x1A);
+                p.TextSecondary = Color.FromArgb(0x5D, 0x5D, 0x5D);
+                p.TextMuted = Color.FromArgb(0x8A, 0x8A, 0x8A);
+                p.Success = Color.FromArgb(0x0F, 0x7B, 0x0F);
+                p.Warning = Color.FromArgb(0x9D, 0x5D, 0x00);
+                p.Danger = Color.FromArgb(0xC4, 0x2B, 0x1C);
+                p.Separator = Color.FromArgb(0xEC, 0xEC, 0xEC);
+                p.RowHover = Color.FromArgb(0xF7, 0xF7, 0xF7);
+                p.DisabledFill = Color.FromArgb(0xF0, 0xF0, 0xF0);
+                p.DisabledText = Color.FromArgb(0xA0, 0xA0, 0xA0);
+            }
+
+            return p;
+        }
+    }
+
     internal static class Theme
     {
         /// <summary>
@@ -25,10 +119,69 @@ namespace AudioSwitch
         /// </summary>
         public static float Scale = 1F;
 
+        private static Palette _palette = Palette.Create(false, Color.FromArgb(0x00, 0x67, 0xC0));
+        private static bool _dark;
+
+        /// <summary>Pick the light or dark palette. Must run before any control exists.</summary>
+        public static void Initialize(bool dark, Color accent)
+        {
+            _dark = dark;
+            _palette = Palette.Create(dark, accent);
+        }
+
+        public static bool IsDark { get { return _dark; } }
+
         /// <summary>Scale a design-time (96 DPI) pixel value.</summary>
         public static int S(float value)
         {
             return (int)Math.Round(value * Scale);
+        }
+
+        // --- palette accessors -------------------------------------------
+        public static Color Window { get { return _palette.Window; } }
+        public static Color Card { get { return _palette.Card; } }
+        public static Color CardBorder { get { return _palette.CardBorder; } }
+        public static Color Shadow { get { return _palette.Shadow; } }
+        public static Color Layer { get { return _palette.Layer; } }
+        public static Color LayerHover { get { return _palette.LayerHover; } }
+        public static Color LayerPressed { get { return _palette.LayerPressed; } }
+        public static Color Accent { get { return _palette.Accent; } }
+        public static Color AccentHover { get { return _palette.AccentHover; } }
+        public static Color AccentPressed { get { return _palette.AccentPressed; } }
+        public static Color AccentSoft { get { return _palette.AccentSoft; } }
+        public static Color OnAccent { get { return _palette.OnAccent; } }
+        public static Color TextPrimary { get { return _palette.TextPrimary; } }
+        public static Color TextSecondary { get { return _palette.TextSecondary; } }
+        public static Color TextMuted { get { return _palette.TextMuted; } }
+        public static Color Success { get { return _palette.Success; } }
+        public static Color Warning { get { return _palette.Warning; } }
+        public static Color Danger { get { return _palette.Danger; } }
+        public static Color Separator { get { return _palette.Separator; } }
+        public static Color RowHover { get { return _palette.RowHover; } }
+        public static Color DisabledFill { get { return _palette.DisabledFill; } }
+        public static Color DisabledText { get { return _palette.DisabledText; } }
+
+        /// <summary>Linear blend from <paramref name="from"/> to <paramref name="to"/> (t = 0..1).</summary>
+        public static Color Blend(Color from, Color to, float t)
+        {
+            if (t < 0F) t = 0F;
+            if (t > 1F) t = 1F;
+            return Color.FromArgb(
+                (int)Math.Round(from.A + (to.A - from.A) * t),
+                (int)Math.Round(from.R + (to.R - from.R) * t),
+                (int)Math.Round(from.G + (to.G - from.G) * t),
+                (int)Math.Round(from.B + (to.B - from.B) * t));
+        }
+
+        /// <summary>
+        /// Black or white, whichever stays readable on the given fill. Used for
+        /// button captions so a pale system accent does not produce white-on-yellow.
+        /// </summary>
+        public static Color ReadableOn(Color background)
+        {
+            double luminance = (0.299 * background.R + 0.587 * background.G
+                                + 0.114 * background.B) / 255.0;
+            return luminance > 0.6 ? Color.FromArgb(0x1A, 0x1A, 0x1A) : Color.White;
         }
 
         /// <summary>
@@ -53,33 +206,17 @@ namespace AudioSwitch
             return fallback;
         }
 
-        public static readonly Color Background = Color.FromArgb(0xF4, 0xF6, 0xF9);
-        public static readonly Color CardBackground = Color.White;
-        public static readonly Color CardBorder = Color.FromArgb(0xE3, 0xE7, 0xEC);
-        public static readonly Color HeaderTop = Color.FromArgb(0x1E, 0x29, 0x3B);
-        public static readonly Color HeaderBottom = Color.FromArgb(0x37, 0x47, 0x5F);
-        public static readonly Color Accent = Color.FromArgb(0x25, 0x63, 0xEB);
-        public static readonly Color AccentDark = Color.FromArgb(0x1D, 0x4E, 0xD8);
-        public static readonly Color AccentSoft = Color.FromArgb(0xEE, 0xF4, 0xFF);
-        public static readonly Color TextPrimary = Color.FromArgb(0x11, 0x18, 0x27);
-        public static readonly Color TextSecondary = Color.FromArgb(0x6B, 0x72, 0x80);
-        public static readonly Color TextMuted = Color.FromArgb(0x9C, 0xA3, 0xAF);
-        public static readonly Color Success = Color.FromArgb(0x04, 0x78, 0x57);
-        public static readonly Color Danger = Color.FromArgb(0xDC, 0x26, 0x26);
-        public static readonly Color RowHover = Color.FromArgb(0xFA, 0xFB, 0xFD);
-        public static readonly Color Separator = Color.FromArgb(0xF1, 0xF3, 0xF6);
-
         private static readonly string FamilyName = PickFamily();
 
-        public static readonly Font Title = MakeFont(15F, FontStyle.Bold);
-        public static readonly Font Subtitle = MakeFont(8.5F, FontStyle.Regular);
-        public static readonly Font CardTitle = MakeFont(10F, FontStyle.Bold);
-        public static readonly Font Body = MakeFont(9F, FontStyle.Regular);
-        public static readonly Font BodyBold = MakeFont(9.75F, FontStyle.Bold);
-        public static readonly Font Small = MakeFont(8F, FontStyle.Regular);
-        public static readonly Font SmallBold = MakeFont(8F, FontStyle.Bold);
+        public static readonly Font Title = MakeFont(16F, FontStyle.Bold);
+        public static readonly Font Subtitle = MakeFont(9F, FontStyle.Regular);
+        public static readonly Font CardTitle = MakeFont(10.5F, FontStyle.Bold);
+        public static readonly Font Body = MakeFont(9.5F, FontStyle.Regular);
+        public static readonly Font BodyBold = MakeFont(10F, FontStyle.Bold);
+        public static readonly Font Small = MakeFont(8.5F, FontStyle.Regular);
+        public static readonly Font SmallBold = MakeFont(8.5F, FontStyle.Bold);
         public static readonly Font Button = MakeFont(9.5F, FontStyle.Regular);
-        public static readonly Font ButtonBold = MakeFont(9.75F, FontStyle.Bold);
+        public static readonly Font ButtonBold = MakeFont(10F, FontStyle.Bold);
 
         private static Font MakeFont(float size, FontStyle style)
         {
@@ -94,7 +231,11 @@ namespace AudioSwitch
         /// </summary>
         private static string PickFamily()
         {
-            string[] candidates = { "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Tahoma" };
+            string[] candidates =
+            {
+                "Microsoft YaHei UI", "Microsoft YaHei",
+                "Segoe UI Variable Text", "Segoe UI", "Tahoma"
+            };
             List<string> installed = new List<string>();
             try
             {
@@ -115,6 +256,11 @@ namespace AudioSwitch
             return FontFamily.GenericSansSerif.Name;
         }
 
+        /// <summary>Corner radius for cards and other large surfaces.</summary>
+        public const int CardRadius = 8;
+        /// <summary>Corner radius for buttons, inputs and list rows.</summary>
+        public const int ControlRadius = 6;
+
         public static GraphicsPath RoundedRect(Rectangle bounds, int radius)
         {
             GraphicsPath path = new GraphicsPath();
@@ -125,6 +271,12 @@ namespace AudioSwitch
             }
 
             int d = Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height));
+            if (d <= 0)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
             path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
             path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
             path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
@@ -132,17 +284,37 @@ namespace AudioSwitch
             path.CloseFigure();
             return path;
         }
+
+        /// <summary>Fill a rounded rectangle in one call.</summary>
+        public static void FillRounded(Graphics g, Rectangle bounds, int radius, Color colour)
+        {
+            using (GraphicsPath path = RoundedRect(bounds, radius))
+            using (SolidBrush brush = new SolidBrush(colour))
+                g.FillPath(brush, path);
+        }
+
+        /// <summary>Outline a rounded rectangle in one call.</summary>
+        public static void DrawRounded(Graphics g, Rectangle bounds, int radius, Color colour)
+        {
+            using (GraphicsPath path = RoundedRect(bounds, radius))
+            using (Pen pen = new Pen(colour))
+                g.DrawPath(pen, path);
+        }
     }
 
-    /// <summary>A white card with a 1px border and an optional section title.</summary>
+    /// <summary>A card surface: rounded, hairline border, a hint of depth.</summary>
     internal class CardPanel : Panel
     {
         private readonly string _title;
+        private readonly string _step;
 
-        public CardPanel(string title)
+        /// <param name="step">Leading number badge, e.g. "1". Empty for no badge.</param>
+        /// <param name="title">Section heading.</param>
+        public CardPanel(string step, string title)
         {
+            _step = step;
             _title = title;
-            BackColor = Theme.CardBackground;
+            BackColor = Theme.Card;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                      | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         }
@@ -153,22 +325,39 @@ namespace AudioSwitch
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             // Behind the card, so the corners outside the rounded outline show the
-            // form background instead of an opaque white square.
-            g.Clear(Theme.BackdropOf(this, Theme.Background));
+            // form background instead of an opaque square.
+            g.Clear(Theme.BackdropOf(this, Theme.Window));
+
+            int radius = Theme.S(Theme.CardRadius);
+
+            // One pixel of soft shadow along the bottom edge gives the surface a
+            // little depth without needing a margin reserved around the control.
+            Rectangle shadow = new Rectangle(0, 1, Width - 1, Height - 1);
+            Theme.FillRounded(g, shadow, radius, Theme.Shadow);
 
             Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
-            using (GraphicsPath path = Theme.RoundedRect(bounds, Theme.S(8)))
-            {
-                using (SolidBrush brush = new SolidBrush(Theme.CardBackground))
-                    g.FillPath(brush, path);
-                using (Pen pen = new Pen(Theme.CardBorder))
-                    g.DrawPath(pen, path);
-            }
+            Theme.FillRounded(g, bounds, radius, Theme.Card);
+            Theme.DrawRounded(g, bounds, radius, Theme.CardBorder);
 
             if (!string.IsNullOrEmpty(_title))
             {
+                int x = Theme.S(18);
+                int y = Theme.S(14);
+
+                if (!string.IsNullOrEmpty(_step))
+                {
+                    // Number badge, sized to the glyph so it stays circular.
+                    int badge = Theme.S(20);
+                    Rectangle circle = new Rectangle(x, y - Theme.S(1), badge, badge);
+                    Theme.FillRounded(g, circle, badge / 2, Theme.Accent);
+                    TextRenderer.DrawText(g, _step, Theme.SmallBold, circle, Theme.OnAccent,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                        | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+                    x += badge + Theme.S(9);
+                }
+
                 TextRenderer.DrawText(g, _title, Theme.CardTitle,
-                    new Point(Theme.S(16), Theme.S(13)), Theme.TextPrimary,
+                    new Point(x, y), Theme.TextPrimary,
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
             }
         }
@@ -176,8 +365,11 @@ namespace AudioSwitch
 
     internal enum ButtonKind
     {
+        /// <summary>Accent-filled: the one main action on the surface.</summary>
         Primary,
+        /// <summary>Neutral filled: ordinary actions.</summary>
         Secondary,
+        /// <summary>Borderless: low-emphasis actions.</summary>
         Ghost
     }
 
@@ -188,7 +380,7 @@ namespace AudioSwitch
         private bool _pressed;
 
         public ButtonKind Kind = ButtonKind.Secondary;
-        public int CornerRadius = Theme.S(6);
+        public int CornerRadius = Theme.S(Theme.ControlRadius);
 
         public FlatButton()
         {
@@ -197,7 +389,7 @@ namespace AudioSwitch
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
             Font = Theme.Button;
-            BackColor = Theme.CardBackground;
+            BackColor = Theme.Card;
             ForeColor = Theme.TextPrimary;
             Cursor = Cursors.Hand;
             UseVisualStyleBackColor = false;
@@ -240,38 +432,35 @@ namespace AudioSwitch
 
         private Color BackColorFor()
         {
-            if (!Enabled)
-            {
-                return Kind == ButtonKind.Primary
-                    ? Color.FromArgb(0xBF, 0xCF, 0xF5)
-                    : Color.FromArgb(0xF3, 0xF4, 0xF6);
-            }
+            if (!Enabled) return Theme.DisabledFill;
 
             switch (Kind)
             {
                 case ButtonKind.Primary:
-                    if (_pressed) return Color.FromArgb(0x18, 0x40, 0xB0);
-                    return _hover ? Theme.AccentDark : Theme.Accent;
+                    if (_pressed) return Theme.AccentPressed;
+                    return _hover ? Theme.AccentHover : Theme.Accent;
                 case ButtonKind.Ghost:
-                    return _pressed ? Color.FromArgb(0xE8, 0xEC, 0xF2)
-                         : (_hover ? Color.FromArgb(0xF1, 0xF4, 0xF8) : Theme.CardBackground);
+                    if (_pressed) return Theme.LayerPressed;
+                    return _hover ? Theme.LayerHover : Color.Transparent;
                 default:
-                    return _pressed ? Color.FromArgb(0xE4, 0xE8, 0xEE)
-                         : (_hover ? Color.FromArgb(0xF3, 0xF6, 0xFA) : Color.FromArgb(0xFA, 0xFB, 0xFC));
+                    if (_pressed) return Theme.LayerPressed;
+                    return _hover ? Theme.LayerHover : Theme.Layer;
             }
         }
 
         private Color ForeColorFor()
         {
-            if (!Enabled) return Theme.TextMuted;
-            return Kind == ButtonKind.Primary ? Color.White : Theme.TextPrimary;
+            if (!Enabled) return Theme.DisabledText;
+            if (Kind == ButtonKind.Primary) return Theme.OnAccent;
+            return Kind == ButtonKind.Ghost ? Theme.TextSecondary : Theme.TextPrimary;
         }
 
         private Color BorderColorFor()
         {
             if (Kind == ButtonKind.Primary) return BackColorFor();
-            if (!Enabled) return Color.FromArgb(0xEC, 0xEF, 0xF3);
-            return _hover ? Color.FromArgb(0xD2, 0xD9, 0xE2) : Theme.CardBorder;
+            if (Kind == ButtonKind.Ghost) return Color.Transparent;
+            if (!Enabled) return Theme.CardBorder;
+            return _hover ? Theme.Blend(Theme.CardBorder, Theme.TextMuted, 0.45F) : Theme.CardBorder;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -281,16 +470,13 @@ namespace AudioSwitch
 
             // Corner pixels belong to whatever is behind the button, so the rounded
             // shape reads correctly on a white card and on the grey form alike.
-            g.Clear(Theme.BackdropOf(this, Theme.CardBackground));
+            g.Clear(Theme.BackdropOf(this, Theme.Card));
 
-            Color back = BackColorFor();
             Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+            Theme.FillRounded(g, bounds, CornerRadius, BackColorFor());
 
-            using (GraphicsPath path = Theme.RoundedRect(bounds, CornerRadius))
-            {
-                using (SolidBrush brush = new SolidBrush(back)) g.FillPath(brush, path);
-                using (Pen pen = new Pen(BorderColorFor())) g.DrawPath(pen, path);
-            }
+            Color border = BorderColorFor();
+            if (border != Color.Transparent) Theme.DrawRounded(g, bounds, CornerRadius, border);
 
             TextRenderer.DrawText(g, Text, Font, bounds, ForeColorFor(),
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
@@ -299,18 +485,419 @@ namespace AudioSwitch
     }
 
     /// <summary>
-    /// Owner-drawn device list: a bold device name over a muted adapter line,
-    /// plus a "默认" pill for the endpoint Windows is currently using.
+    /// A rounded single-line text input: the borderless TextBox is hosted inside a
+    /// panel that paints the surface, so the field matches the card language
+    /// instead of falling back to the square Win32 edit box.
+    /// </summary>
+    internal class RoundedField : Panel
+    {
+        private readonly TextBox _box;
+        private bool _focused;
+
+        public RoundedField()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Layer;
+
+            _box = new TextBox();
+            _box.BorderStyle = BorderStyle.None;
+            _box.Font = Theme.Body;
+            _box.BackColor = Theme.Layer;
+            _box.ForeColor = Theme.TextPrimary;
+            _box.GotFocus += delegate { _focused = true; Invalidate(); };
+            _box.LostFocus += delegate { _focused = false; Invalidate(); };
+            _box.TextChanged += delegate
+            {
+                if (TextChangedHandler != null) TextChangedHandler(this, EventArgs.Empty);
+            };
+            _box.HandleCreated += delegate { LayoutInner(); };
+            Controls.Add(_box);
+        }
+
+        /// <summary>Raised when the inner text changes, so callers can bind like a TextBox.</summary>
+        public event EventHandler TextChangedHandler;
+
+        public TextBox Inner { get { return _box; } }
+
+        public override string Text
+        {
+            get { return _box.Text; }
+            set { _box.Text = value; }
+        }
+
+        /// <summary>Placeholder drawn while the field is empty and unfocused.</summary>
+        public string Placeholder = "";
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            LayoutInner();
+        }
+
+        private void LayoutInner()
+        {
+            if (_box == null) return;
+
+            int pad = Theme.S(11);
+            int height = _box.PreferredHeight;
+            _box.SetBounds(pad, Math.Max(Theme.S(2), (Height - height) / 2),
+                Math.Max(Theme.S(10), Width - pad * 2), height);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Theme.BackdropOf(this, Theme.Card));
+
+            Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+            Theme.FillRounded(g, bounds, Theme.S(Theme.ControlRadius), Theme.Layer);
+
+            // The focus ring is the accent border Windows 11 uses on inputs.
+            Color border = _focused
+                ? Theme.Accent
+                : Theme.Blend(Theme.CardBorder, Theme.TextMuted, 0.35F);
+            Theme.DrawRounded(g, bounds, Theme.S(Theme.ControlRadius), border);
+
+            if (_box.TextLength == 0 && !_focused && !string.IsNullOrEmpty(Placeholder))
+            {
+                int pad = Theme.S(11);
+                Rectangle text = new Rectangle(pad, 0, Width - pad * 2, Height);
+                TextRenderer.DrawText(g, Placeholder, Theme.Body, text, Theme.TextMuted,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                    | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A drop-down selector drawn like <see cref="RoundedField"/>: the standard
+    /// ComboBox keeps its classic drop-down button and cannot be themed, so the
+    /// value is shown here and the list opens as a themed menu.
+    /// </summary>
+    internal class DropdownField : Panel
+    {
+        private readonly string[] _items;
+        private int _selected;
+        private bool _hover;
+
+        public DropdownField(string[] items)
+        {
+            _items = items ?? new string[0];
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Layer;
+            Cursor = Cursors.Hand;
+        }
+
+        public event EventHandler SelectionChanged;
+
+        public int SelectedIndex
+        {
+            get { return _selected; }
+            set
+            {
+                if (value < 0 || value >= _items.Length || value == _selected) return;
+                _selected = value;
+                Invalidate();
+                if (SelectionChanged != null) SelectionChanged(this, EventArgs.Empty);
+            }
+        }
+
+        public string SelectedItem
+        {
+            get { return _selected >= 0 && _selected < _items.Length ? _items[_selected] : ""; }
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            _hover = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            _hover = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            ShowMenu();
+        }
+
+        private void ShowMenu()
+        {
+            ContextMenuStrip menu = new ContextMenuStrip();
+            menu.Renderer = new ThemedMenuRenderer();
+            menu.ShowImageMargin = false;
+            menu.Font = Theme.Body;
+            menu.BackColor = Theme.Card;
+            menu.ForeColor = Theme.TextPrimary;
+
+            for (int i = 0; i < _items.Length; i++)
+            {
+                int index = i;
+                ToolStripMenuItem item = new ToolStripMenuItem(_items[i]);
+                item.ForeColor = Theme.TextPrimary;
+                item.Tag = index == _selected ? "current" : null;
+                item.Click += delegate { SelectedIndex = index; };
+                menu.Items.Add(item);
+            }
+
+            menu.Closed += delegate { menu.Dispose(); };
+            menu.Show(this, new Point(0, Height + Theme.S(4)));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Theme.BackdropOf(this, Theme.Card));
+
+            Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+            Theme.FillRounded(g, bounds, Theme.S(Theme.ControlRadius),
+                _hover ? Theme.LayerHover : Theme.Layer);
+            Theme.DrawRounded(g, bounds, Theme.S(Theme.ControlRadius),
+                _hover ? Theme.Blend(Theme.CardBorder, Theme.TextMuted, 0.45F) : Theme.CardBorder);
+
+            int pad = Theme.S(11);
+            int chevron = Theme.S(10);
+            Rectangle text = new Rectangle(pad, 0,
+                Width - pad * 2 - chevron - Theme.S(6), Height);
+            TextRenderer.DrawText(g, SelectedItem, Theme.Body, text, Theme.TextPrimary,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+
+            // Chevron glyph, drawn as two strokes so it scales with the control.
+            int cx = Width - pad - chevron / 2;
+            int cy = Height / 2;
+            using (Pen pen = new Pen(Theme.TextSecondary, Math.Max(1.4F, Theme.S(1.4F))))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                g.DrawLine(pen, cx - chevron / 2, cy - chevron / 4,
+                                cx, cy + chevron / 4);
+                g.DrawLine(pen, cx, cy + chevron / 4,
+                                cx + chevron / 2, cy - chevron / 4);
+            }
+        }
+    }
+
+    /// <summary>Flat, palette-aware renderer for the themed drop-down menus.</summary>
+    internal class ThemedMenuRenderer : ToolStripRenderer
+    {
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            e.Graphics.Clear(Theme.Card);
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            Rectangle bounds = new Rectangle(0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Theme.DrawRounded(e.Graphics, bounds, Theme.S(Theme.ControlRadius), Theme.CardBorder);
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.Selected && e.Item.Tag == null) return;
+
+            Rectangle bounds = new Rectangle(Theme.S(4), 0,
+                e.Item.Width - Theme.S(8), e.Item.Height);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Color fill = e.Item.Selected ? Theme.LayerHover
+                       : Theme.Blend(Theme.AccentSoft, Theme.Card, 0.35F);
+            Theme.FillRounded(e.Graphics, bounds, Theme.S(4), fill);
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = Theme.TextPrimary;
+            base.OnRenderItemText(e);
+        }
+    }
+
+    /// <summary>
+    /// A thin, rounded scroll indicator in the Windows 11 style. The host list
+    /// keeps its native scrolling (wheel, keys, drag) and simply reports changes;
+    /// this control mirrors them and can also be dragged directly.
+    /// </summary>
+    internal class ThinScrollBar : Panel
+    {
+        private ListBox _target;
+        private bool _dragging;
+        private int _dragOffset;
+
+        public ThinScrollBar()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Card;
+            Cursor = Cursors.Hand;
+            Width = Theme.S(6);
+        }
+
+        public void Attach(ListBox target)
+        {
+            _target = target;
+        }
+
+        /// <summary>Recompute whether a thumb is needed; returns false when everything fits.</summary>
+        public bool RefreshState()
+        {
+            int top, height;
+            bool needed = Geometry(out top, out height);
+            if (Visible != needed) Visible = needed;
+            Invalidate();
+            return needed;
+        }
+
+        private bool Geometry(out int thumbTop, out int thumbHeight)
+        {
+            thumbTop = 0;
+            thumbHeight = 0;
+            if (_target == null || Height <= 0) return false;
+
+            int count = _target.Items.Count;
+            int itemHeight = _target.ItemHeight;
+            int viewHeight = _target.ClientSize.Height;
+            int visible = itemHeight > 0 ? viewHeight / itemHeight : 0;
+            if (count <= 0 || visible <= 0 || count <= visible) return false;
+
+            int track = Height;
+            int minThumb = Theme.S(30);
+            thumbHeight = Math.Max(minThumb, (int)Math.Round((double)track * visible / count));
+            if (thumbHeight > track) thumbHeight = track;
+
+            int maxTop = track - thumbHeight;
+            int maxFirst = count - visible;
+            int first = _target.TopIndex;
+            if (first < 0) first = 0;
+            if (first > maxFirst) first = maxFirst;
+
+            thumbTop = maxFirst > 0 ? (int)Math.Round((double)maxTop * first / maxFirst) : 0;
+            return true;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Theme.BackdropOf(this, Theme.Card));
+
+            int top, height;
+            if (!Geometry(out top, out height)) return;
+
+            Rectangle thumb = new Rectangle(0, top, Width - 1, height);
+            Color fill = _dragging
+                ? Theme.Blend(Theme.TextMuted, Theme.TextPrimary, 0.45F)
+                : Theme.Blend(Theme.TextMuted, Theme.Card, 0.55F);
+            Theme.FillRounded(g, thumb, Math.Max(2, (Width - 1) / 2), fill);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (_target == null) return;
+
+            int top, height;
+            if (!Geometry(out top, out height)) return;
+
+            if (e.Y >= top && e.Y <= top + height)
+            {
+                _dragging = true;
+                _dragOffset = e.Y - top;
+            }
+            else
+            {
+                // Clicking the track pages towards the click.
+                _target.TopIndex = Math.Max(0, _target.TopIndex + (e.Y < top ? -1 : 1));
+            }
+            Invalidate();
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (!_dragging || _target == null) return;
+
+            int top, height;
+            if (!Geometry(out top, out height)) return;
+
+            int track = Height;
+            int maxTop = track - height;
+            if (maxTop <= 0) return;
+
+            int desired = e.Y - _dragOffset;
+            if (desired < 0) desired = 0;
+            if (desired > maxTop) desired = maxTop;
+
+            int count = _target.Items.Count;
+            int visible = _target.ItemHeight > 0
+                ? _target.ClientSize.Height / _target.ItemHeight : 1;
+            int maxFirst = Math.Max(1, count - visible);
+
+            _target.TopIndex = (int)Math.Round((double)desired / maxTop * maxFirst);
+            Invalidate();
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            _dragging = false;
+            Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            if (!_dragging) Invalidate();
+        }
+    }
+
+    /// <summary>
+    /// Owner-drawn device list: a bold device name over a muted adapter line, plus
+    /// a "默认" pill for the endpoint Windows is currently using. Selection is a
+    /// rounded inset highlight, matching the Windows 11 list style.
     /// </summary>
     internal class DeviceListBox : ListBox
     {
         /// <summary>Row height at 96 DPI; re-scaled by the form on load.</summary>
-        public const int DesignRowHeight = 50;
+        public const int DesignRowHeight = 54;
+
+        private const int GWL_STYLE = -16;
+        private const int WS_VSCROLL = 0x00200000;
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         private readonly int _padLeft = Theme.S(14);
         private readonly HashSet<string> _defaultIds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private int _hoverIndex = -1;
+
+        /// <summary>
+        /// Width the rows should be drawn at. A native ListBox keeps a non-client
+        /// scrollbar gutter that is painted with the system colour and cannot be
+        /// themed, so the list is deliberately made wider than the viewport that
+        /// clips it and rows are laid out to the visible width instead.
+        /// </summary>
+        public int VisibleWidth
+        {
+            get { return _visibleWidth > 0 ? _visibleWidth : ClientSize.Width; }
+            set { _visibleWidth = value; Invalidate(); }
+        }
+
+        private int _visibleWidth;
 
         public DeviceListBox()
         {
@@ -318,9 +905,49 @@ namespace AudioSwitch
             ItemHeight = Theme.S(DesignRowHeight);
             BorderStyle = BorderStyle.None;
             IntegralHeight = false;
-            BackColor = Theme.CardBackground;
+            BackColor = Theme.Card;
             Font = Theme.Body;
             SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
+        }
+
+        /// <summary>Diagnostic: the list's live window style and scrollbar state.</summary>
+        public string DescribeScrollState()
+        {
+            if (!IsHandleCreated) return "no handle";
+            int style = GetWindowLong(Handle, GWL_STYLE);
+            return "style=0x" + style.ToString("X8")
+                 + " WS_VSCROLL=" + ((style & WS_VSCROLL) != 0)
+                 + " width=" + Width
+                 + " clientW=" + ClientSize.Width
+                 + " gutter=" + (Width - ClientSize.Width)
+                 + " items=" + Items.Count
+                 + " topIndex=" + TopIndex
+                 + " itemH=" + ItemHeight;
+        }
+
+        /// <summary>Raised whenever the visible range may have moved, so the thin scrollbar can follow.</summary>
+        public event EventHandler ScrollChanged;
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+
+            // Drop the classic scrollbar; ThinScrollBar draws a modern one beside us.
+            // Scrolling itself is untouched — wheel, keys and TopIndex all still work.
+            int style = GetWindowLong(Handle, GWL_STYLE);
+            SetWindowLong(Handle, GWL_STYLE, style & ~WS_VSCROLL);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+
+            // WM_VSCROLL, WM_MOUSEWHEEL, WM_KEYDOWN, WM_LBUTTONDOWN/UP
+            if (m.Msg == 0x0115 || m.Msg == 0x020A || m.Msg == 0x0100
+                || m.Msg == 0x0201 || m.Msg == 0x0202)
+            {
+                if (ScrollChanged != null) ScrollChanged(this, EventArgs.Empty);
+            }
         }
 
         public void SetDefaultIds(IEnumerable<string> ids)
@@ -375,28 +1002,32 @@ namespace AudioSwitch
             if (endpoint == null) return;
 
             bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-            Rectangle row = new Rectangle(0, e.Bounds.Y, Width, ItemHeight);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            Color background = selected ? Theme.AccentSoft
-                             : (e.Index == _hoverIndex ? Theme.RowHover : Theme.CardBackground);
+            // ClientSize excludes any border/scrollbar, so the highlight and the
+            // "默认" pill never slide underneath the scroll indicator. VisibleWidth
+            // narrows it further to the clipping viewport the form provides.
+            int rowWidth = VisibleWidth;
 
-            using (SolidBrush brush = new SolidBrush(background)) g.FillRectangle(brush, row);
+            // Full-width clear first, then the rounded highlight inset inside it.
+            using (SolidBrush brush = new SolidBrush(Theme.Card))
+                g.FillRectangle(brush, new Rectangle(0, e.Bounds.Y, rowWidth, ItemHeight));
 
-            if (selected)
-            {
-                using (SolidBrush brush = new SolidBrush(Theme.Accent))
-                    g.FillRectangle(brush, new Rectangle(row.X, row.Y, 3, row.Height));
-            }
+            Rectangle row = new Rectangle(Theme.S(4), e.Bounds.Y + Theme.S(1),
+                rowWidth - Theme.S(8), ItemHeight - Theme.S(3));
+
+            if (selected) Theme.FillRounded(g, row, Theme.S(6), Theme.AccentSoft);
+            else if (e.Index == _hoverIndex) Theme.FillRounded(g, row, Theme.S(6), Theme.RowHover);
 
             Color nameColor = endpoint.IsActive
-                ? (selected ? Theme.AccentDark : Theme.TextPrimary)
+                ? (selected ? Theme.Accent : Theme.TextPrimary)
                 : Theme.TextSecondary;
 
             // Proportions of the row height, so the two text lines stay balanced at
             // any DPI without needing separate absolute measurements.
-            int nameTop = row.Y + (int)Math.Round(ItemHeight * 0.18);
-            int detailTop = row.Y + (int)Math.Round(ItemHeight * 0.60);
-            int textWidth = row.Width - _padLeft - Theme.S(96);
+            int nameTop = row.Y + (int)Math.Round(ItemHeight * 0.17);
+            int detailTop = row.Y + (int)Math.Round(ItemHeight * 0.58);
+            int textWidth = row.Width - _padLeft - Theme.S(104);
 
             Rectangle nameRect = new Rectangle(row.X + _padLeft, nameTop, textWidth,
                 (int)Math.Round(ItemHeight * 0.40));
@@ -422,23 +1053,166 @@ namespace AudioSwitch
                     new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
                 int pillHeight = Theme.S(20);
                 Rectangle pill = new Rectangle(
-                    row.Right - Theme.S(14) - textSize.Width - Theme.S(16),
+                    row.Right - Theme.S(12) - textSize.Width - Theme.S(14),
                     row.Y + (ItemHeight - pillHeight) / 2,
-                    textSize.Width + Theme.S(16), pillHeight);
+                    textSize.Width + Theme.S(14), pillHeight);
 
-                using (GraphicsPath path = Theme.RoundedRect(pill, pillHeight / 2))
-                using (SolidBrush brush = new SolidBrush(Theme.Accent))
-                {
-                    g.SmoothingMode = SmoothingMode.AntiAlias;
-                    g.FillPath(brush, path);
-                }
-                TextRenderer.DrawText(g, label, Theme.SmallBold, pill, Color.White,
+                Theme.FillRounded(g, pill, pillHeight / 2, Theme.Accent);
+                TextRenderer.DrawText(g, label, Theme.SmallBold, pill, Theme.OnAccent,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
                     | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
             }
 
-            using (Pen pen = new Pen(Theme.Separator))
-                g.DrawLine(pen, row.X + _padLeft, row.Bottom - 1, row.Right - _padLeft, row.Bottom - 1);
+            // Hairline between rows, kept clear of the rounded highlight.
+            if (e.Index < Items.Count - 1)
+            {
+                using (Pen pen = new Pen(Theme.Separator))
+                    g.DrawLine(pen, row.X + _padLeft, row.Bottom + Theme.S(1),
+                                    row.Right - _padLeft, row.Bottom + Theme.S(1));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Owner-drawn checkbox: a rounded box with an accent fill and a stroked tick,
+    /// so the three options read as part of the same design language as the fields
+    /// instead of falling back to the classic Win32 box.
+    /// </summary>
+    internal class FlatCheckBox : CheckBox
+    {
+        private bool _hover;
+
+        public FlatCheckBox()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Card;
+            ForeColor = Theme.TextPrimary;
+            Font = Theme.Body;
+            Cursor = Cursors.Hand;
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            _hover = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            _hover = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnCheckedChanged(EventArgs e)
+        {
+            Invalidate();
+            base.OnCheckedChanged(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Theme.BackdropOf(this, Theme.Card));
+
+            int box = Theme.S(18);
+            int top = (Height - box) / 2;
+            Rectangle square = new Rectangle(0, top, box, box);
+            int radius = Theme.S(4);
+
+            if (Checked)
+            {
+                Theme.FillRounded(g, square, radius, Enabled ? Theme.Accent : Theme.DisabledText);
+            }
+            else
+            {
+                Theme.FillRounded(g, square, radius, Theme.Layer);
+                Theme.DrawRounded(g, square, radius,
+                    _hover ? Theme.Blend(Theme.CardBorder, Theme.TextMuted, 0.70F)
+                           : Theme.Blend(Theme.CardBorder, Theme.TextMuted, 0.35F));
+            }
+
+            if (Checked)
+            {
+                float w = Math.Max(1.6F, Theme.S(1.6F));
+                using (Pen pen = new Pen(Theme.OnAccent, w))
+                {
+                    pen.StartCap = LineCap.Round;
+                    pen.EndCap = LineCap.Round;
+                    pen.LineJoin = LineJoin.Round;
+                    g.DrawLines(pen, new PointF[]
+                    {
+                        new PointF(square.X + box * 0.26F, square.Y + box * 0.53F),
+                        new PointF(square.X + box * 0.43F, square.Y + box * 0.70F),
+                        new PointF(square.X + box * 0.75F, square.Y + box * 0.31F)
+                    });
+                }
+            }
+
+            int gap = Theme.S(9);
+            Rectangle text = new Rectangle(box + gap, 0, Math.Max(1, Width - box - gap), Height);
+            TextRenderer.DrawText(g, Text, Font, text,
+                Enabled ? ForeColor : Theme.DisabledText,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+        }
+    }
+
+    /// <summary>
+    /// A rounded, bordered tile that hosts the icon preview, so the image sits on
+    /// the same surface language as the fields instead of a hard FixedSingle frame.
+    /// </summary>
+    internal class PreviewTile : Panel
+    {
+        private Image _image;
+
+        public PreviewTile()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = Theme.Layer;
+        }
+
+        /// <summary>The image to show. The tile owns it and disposes the previous one.</summary>
+        public Image Preview
+        {
+            get { return _image; }
+            set
+            {
+                if (_image != null) _image.Dispose();
+                _image = value;
+                Invalidate();
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Theme.BackdropOf(this, Theme.Card));
+
+            Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+            int radius = Theme.S(Theme.ControlRadius);
+            Theme.FillRounded(g, bounds, radius, Theme.Layer);
+            Theme.DrawRounded(g, bounds, radius, Theme.CardBorder);
+
+            if (_image == null) return;
+
+            int inset = Theme.S(6);
+            int available = Math.Min(Width, Height) - inset * 2;
+            if (available <= 0) return;
+
+            float ratio = Math.Min((float)available / _image.Width,
+                                   (float)available / _image.Height);
+            int w = Math.Max(1, (int)Math.Round(_image.Width * ratio));
+            int h = Math.Max(1, (int)Math.Round(_image.Height * ratio));
+
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.DrawImage(_image, new Rectangle((Width - w) / 2, (Height - h) / 2, w, h));
         }
     }
 

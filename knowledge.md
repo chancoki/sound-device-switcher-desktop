@@ -33,7 +33,8 @@
 |------|------|
 | `Program.cs` | 入口；GUI/CLI 分发；`EnsureConsole()` 让 GUI 子系统程序在终端里也能输出 |
 | `SwitchForm.cs` | 主窗口、全部布局坐标、DPI 缩放、业务动作 |
-| `UiKit.cs` | `Theme`（配色/字体/缩放）、`CardPanel`、`FlatButton`、`DeviceListBox`、`IconLoader` |
+| `UiKit.cs` | `Palette`/`Theme`（配色/字体/缩放）、`CardPanel`、`FlatButton`、`RoundedField`、`DropdownField`、`FlatCheckBox`、`PreviewTile`、`ThinScrollBar`、`DeviceListBox`、`IconLoader` |
+| `NativeTheme.cs` | Windows 11 窗口外观（圆角、深色标题栏、系统强调色）；`ShellFolders` 解析桌面/本地应用数据目录 |
 | `CoreAudioInterop.cs` | Core Audio 公开接口 + 未公开 `IPolicyConfig` 的 COM 声明 |
 | `AudioManager.cs` | `AudioEndpoint` 模型、枚举、读默认设备、切换默认设备 |
 | `Shortcut.cs` | `IShellLinkW` / `IPersistFile`，创建 `.lnk`；文件名清洗；快捷键解析 |
@@ -92,10 +93,25 @@
 ### 与 WinForms / DPI 相关
 
 - **不要重新打开 `AutoScaleMode`。** 详情见 README「关于 DPI」：设置 `AutoScaleDimensions` 会让 WinForms 把它归一化成当前 DPI，导致它只缩放子控件、不缩放顶层窗口，界面右侧被裁掉。当前实现是 `AutoScaleMode.None` + `SwitchForm.ApplyScale()` 手工统一缩放。
-- `Theme.Scale` 是静态字段，必须在**创建任何控件之前**赋值（`SwitchForm` 构造函数第一步），因为 `DeviceListBox._padLeft`、`FlatButton.CornerRadius` 等都是在字段初始化器里用它算出来的。
+- `Theme.Scale` 是静态字段，必须在**创建任何控件之前**赋值（`SwitchForm` 构造函数第一步），因为 `DeviceListBox._padLeft`、`FlatButton.CornerRadius` 等都是在字段初始化器里用它算出来的。同理 `Theme.Initialize(深色?, 强调色)` 也必须在此之前调用——`Palette` 决定所有控件的初始 `BackColor`。
+- **`ScaleControlTree` 必须跳过 `RoundedField`。** `RoundedField` 自己用 `Theme.S()` 摆放内部 `TextBox`，而 `Theme.S()` 已经带了最终缩放比；若递归缩放它的子控件，内层文本框会被缩放两次。
+- `ApplyScale()` 末尾要根据缩放后的视口重新校正设备列表宽度（见下条），因为那时 `ClientSize` 才最终确定。
 - 自定义绘制（卡片圆角、内边距、列表行文字位置）一律走 `Theme.S()`，否则高 DPI 下会与缩放后的控件对不齐。
 - `DeviceListBox` 行内文字位置按 `ItemHeight` 的比例计算，而不是写死像素。
 - 窗口在 `Screen.PrimaryScreen.WorkingArea` 放不下时会自动启用 `AutoScroll`，避免按钮够不着。
+- 用 `AUDIOSWITCH_SCALE=1.25` 可在 100% 显示器上验证高 DPI 布局；`AUDIOSWITCH_THEME=dark|light` 可强制主题。两者都只影响外观，正常启动时无副作用。
+
+### 与现代外观相关（Windows 11 风格）
+
+- **原生 `ListBox` 有一条去不掉的非客户区滚动条槽。** 即使清掉 `WS_VSCROLL`，控件仍保留约 17px 的槽位（实测 `width=700` → `clientW=683`），并且**用系统颜色绘制，无法通过 `BackColor` 改**——深色主题下会露出一条白边。解决办法：把列表放进一个 `Panel` 视口并让列表比视口**宽出 24px**，超出的部分连同那条槽一起被裁掉；行宽用 `VisibleWidth`（= 视口客户区宽度）绘制，右侧再放自绘的 `ThinScrollBar`。滚动本身不受影响（滚轮、键盘、`TopIndex` 照常）。
+- 原生 `TextBox` / `ComboBox` 无法真正主题化（`ComboBox` 的下拉按钮尤其）。因此用 `RoundedField`（内嵌无边框 `TextBox`）和 `DropdownField`（自绘 + `ContextMenuStrip` 下拉）替代。**这两个控件不是 `TextBox`/`ComboBox`，`TextChanged`、`SelectedIndex`、`Text` 等接口由它们自己提供**；改动调用方时注意 `RoundedField.TextChangedHandler` 与 `DropdownField.SelectionChanged` 是自定义事件。
+- 圆角控件清屏必须用 `Theme.BackdropOf(this, 回退色)`，不能用自己的 `BackColor`，否则四角会露出方块（见下条历史教训）。
+- `NativeTheme` 里的 DWM 调用全是尽力而为：Windows 10 及更早会直接拒绝这些属性，此时保留方形窗口和浅色配色，不影响功能。
+- 系统强调色可能是很亮的颜色，所以主按钮文字用 `Theme.ReadableOn(强调色)` 在黑白之间选，避免出现白字黄底。
+
+### 与系统目录相关
+
+- **`Environment.GetFolderPath` 在某些环境下会返回空字符串**（实测本机 `DesktopDirectory`、`Desktop`、`LocalApplicationData` 全为空，而注册表 `Shell Folders` 里有正确值）。因此 `ShellFolders` 会回退到注册表 `HKCU\...\Explorer\Shell Folders` 并展开 `%USERPROFILE%`。若直接用 `GetFolderPath`，「保存位置」会显示为空。
 
 ### 与 PowerShell / 工具链相关
 

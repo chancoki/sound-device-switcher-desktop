@@ -213,6 +213,21 @@ WinForms 自带的 `AutoScaleMode.Dpi` 在本项目里被刻意**关闭**了，�
 
 因此本项目改为：`AutoScaleMode = None`，由 `SwitchForm.ApplyScale()` 在构造时读取 DPI、统一缩放窗口和每个控件（`Theme.Scale` / `Theme.S()`），自定义绘制的圆角、内边距等也全部走 `Theme.S()`。点单位的字体本来就会随 DPI 自动放大，两边因此始终一致。
 
+用环境变量 `AUDIOSWITCH_SCALE=1.25` 可以在 100% 的显示器上直接验证高 DPI 布局。
+
+### 关于外观
+
+界面采用 Windows 11（Fluent）的设计语言：
+
+- **浅色 / 深色主题** —— 跟随系统的「应用模式」自动选择配色；
+- **系统强调色** —— 主按钮取用户自己的强调色，并自动选择黑白文字以保证可读；
+- **窗口圆角与深色标题栏** —— 通过 DWM 属性设置（Windows 10 及更早会忽略，不影响功能）；
+- **自绘控件** —— 卡片、按钮、输入框、下拉框、复选框、滚动条全部自绘，以避开原生 Win32 控件无法主题化的问题。
+
+> 想直接看看深色效果：设置 `AUDIOSWITCH_THEME=dark` 启动即可（`=light` 则强制浅色）。
+
+> 一个踩过的坑：原生 `ListBox` 即使清掉 `WS_VSCROLL`，仍保留约 17px 的滚动条槽，并且**用系统颜色绘制、无法改色** —— 深色主题下会露出一条白边。现在把列表放进一个视口面板、让它宽出 24px 被裁掉，右侧改用自绘的细滚动条。
+
 ---
 
 ## 开发指南
@@ -225,7 +240,8 @@ sound-device-switcher-desktop/
 ├── src/
 │   ├── Program.cs             # 入口：GUI / CLI 分发，控制台附加
 │   ├── SwitchForm.cs          # 主窗口与全部布局
-│   ├── UiKit.cs               # 配色、字体、自定义控件（卡片/按钮/设备列表）
+│   ├── UiKit.cs               # 配色、字体、自定义控件（卡片/按钮/输入框/列表）
+│   ├── NativeTheme.cs         # Windows 11 窗口外观 + 系统目录解析
 │   ├── CoreAudioInterop.cs    # Core Audio + IPolicyConfig COM 声明
 │   ├── AudioManager.cs        # 设备枚举、当前默认设备、切换默认设备
 │   ├── Shortcut.cs            # IShellLink 创建 .lnk

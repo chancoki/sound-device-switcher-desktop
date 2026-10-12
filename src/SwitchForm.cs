@@ -1,6 +1,10 @@
 // SwitchForm.cs — the whole GUI: pick an output device, pick an .ico, generate
 // the shortcut. Laid out by hand with absolute coordinates inside a fixed-size
 // window so no designer file is needed and the layout is fully reviewable here.
+//
+// The visual language follows Windows 11: a quiet window background, numbered
+// card sections, rounded inputs, and the system accent colour on the primary
+// action. ApplyScale() owns every coordinate; AutoScaleMode stays None.
 
 using System;
 using System.Collections.Generic;
@@ -13,23 +17,26 @@ using System.Windows.Forms;
 
 namespace AudioSwitch
 {
+    /// <summary>
+    /// The window heading: title, one-line explanation and the app icon, closed
+    /// off by a hairline so the cards below read as the content area.
+    /// </summary>
     internal sealed class HeaderPanel : Panel
     {
         public HeaderPanel()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                      | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-            BackColor = Theme.HeaderTop;
+            BackColor = Theme.Window;
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            using (LinearGradientBrush brush = new LinearGradientBrush(
-                new Rectangle(0, 0, Width, Height), Theme.HeaderTop, Theme.HeaderBottom,
-                LinearGradientMode.Horizontal))
-            {
-                e.Graphics.FillRectangle(brush, ClientRectangle);
-            }
+            Graphics g = e.Graphics;
+            g.Clear(Theme.Window);
+
+            using (Pen pen = new Pen(Theme.CardBorder))
+                g.DrawLine(pen, 0, Height - 1, Width, Height - 1);
         }
     }
 
@@ -47,22 +54,24 @@ namespace AudioSwitch
         };
 
         private HeaderPanel _header;
+        private Panel _deviceViewport;
         private DeviceListBox _deviceList;
+        private ThinScrollBar _deviceScroll;
         private FlatButton _refreshButton;
 
-        private PictureBox _iconPreview;
-        private TextBox _iconPathBox;
+        private PreviewTile _iconPreview;
+        private RoundedField _iconPathBox;
         private FlatButton _browseIconButton;
         private FlatButton _clearIconButton;
         private Label _iconHint;
 
-        private TextBox _nameBox;
-        private ComboBox _hotkeyBox;
-        private TextBox _directoryBox;
+        private RoundedField _nameBox;
+        private DropdownField _hotkeyBox;
+        private RoundedField _directoryBox;
         private FlatButton _browseDirectoryButton;
-        private CheckBox _notifyCheck;
-        private CheckBox _allRolesCheck;
-        private CheckBox _installCheck;
+        private FlatCheckBox _notifyCheck;
+        private FlatCheckBox _allRolesCheck;
+        private FlatCheckBox _installCheck;
 
         private FlatButton _testButton;
         private FlatButton _openFolderButton;
@@ -86,6 +95,11 @@ namespace AudioSwitch
 
         public SwitchForm()
         {
+            // The palette and the layout scale must both be settled before the
+            // first control exists: field initialisers in the controls below read
+            // Theme.S() and Theme.Card at construction time.
+            bool dark = NativeTheme.IsDarkMode();
+            Theme.Initialize(dark, NativeTheme.AccentColor());
             Theme.Scale = DetectScale();
 
             BuildUi();
@@ -99,9 +113,30 @@ namespace AudioSwitch
         /// <summary>
         /// The DPI the point-sized fonts in Theme were created at — the same device
         /// context, so the layout scale always matches the text scale.
+        ///
+        /// Set AUDIOSWITCH_SCALE to a factor (e.g. 1.25) to force it, which keeps
+        /// the high-DPI layout verifiable on a 100% display.
         /// </summary>
         private static float DetectScale()
         {
+            try
+            {
+                string forced = Environment.GetEnvironmentVariable("AUDIOSWITCH_SCALE");
+                if (!string.IsNullOrEmpty(forced))
+                {
+                    float parsed;
+                    if (float.TryParse(forced.Trim(), System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out parsed)
+                        && parsed > 0F && !float.IsNaN(parsed) && !float.IsInfinity(parsed))
+                    {
+                        return parsed;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
             try
             {
                 using (Graphics graphics = Graphics.FromHwnd(IntPtr.Zero))
@@ -115,6 +150,12 @@ namespace AudioSwitch
             {
                 return 1F;
             }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            NativeTheme.ApplyWindowChrome(this, Theme.IsDark);
         }
 
         /// <summary>
@@ -149,6 +190,16 @@ namespace AudioSwitch
 
             ClientSize = target;
             ResumeLayout(true);
+
+            // Now that every control carries its final scaled size, tell the list
+            // how wide it is actually visible: the viewport clips the native
+            // scrollbar gutter that would otherwise show through.
+            if (_deviceViewport != null && _deviceList != null)
+            {
+                _deviceList.VisibleWidth = _deviceViewport.ClientSize.Width;
+                _deviceList.Width = _deviceViewport.ClientSize.Width + Theme.S(24);
+                _deviceList.Height = _deviceViewport.ClientSize.Height;
+            }
         }
 
         private static void ScaleControlTree(Control parent, float scale)
@@ -161,6 +212,12 @@ namespace AudioSwitch
                 child.Size = new Size(
                     (int)Math.Round(child.Width * scale),
                     (int)Math.Round(child.Height * scale));
+
+                // RoundedField positions its inner TextBox itself from Theme.S(),
+                // which already carries the final scale. Recursing would scale that
+                // child a second time, so its own layout pass is left authoritative.
+                if (child is RoundedField) continue;
+
                 ScaleControlTree(child, scale);
             }
         }
@@ -178,7 +235,8 @@ namespace AudioSwitch
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Theme.Background;
+            BackColor = Theme.Window;
+            ForeColor = Theme.TextPrimary;
             Font = Theme.Body;
             AutoScaleMode = AutoScaleMode.None;   // ApplyScale() owns all geometry
             Icon = IconLoader.LoadApplicationIcon(0);
@@ -208,6 +266,8 @@ namespace AudioSwitch
             {
                 System.Text.StringBuilder text = new System.Text.StringBuilder();
                 text.AppendLine("DetectedScale              = " + Theme.Scale);
+                text.AppendLine("DarkMode                   = " + Theme.IsDark);
+                text.AppendLine("Accent                     = " + Theme.Accent);
                 text.AppendLine("DeviceDpi                  = " + DeviceDpi);
                 text.AppendLine("AutoScaleMode              = " + AutoScaleMode);
                 text.AppendLine("ClientSize                 = " + ClientSize);
@@ -216,6 +276,9 @@ namespace AudioSwitch
                 text.AppendLine("header.Bounds              = " + _header.Bounds);
                 text.AppendLine("deviceList.Bounds          = " + _deviceList.Bounds);
                 text.AppendLine("deviceList.ItemHeight      = " + _deviceList.ItemHeight);
+                text.AppendLine("deviceList.ScrollState     = " + _deviceList.DescribeScrollState());
+                text.AppendLine("deviceScroll.Visible       = " + _deviceScroll.Visible
+                                 + " bounds=" + _deviceScroll.Bounds);
                 text.AppendLine("createButton.Bounds        = " + _createButton.Bounds);
                 text.AppendLine("statusLabel.Bounds         = " + _statusLabel.Bounds);
                 text.AppendLine("Theme.Body                 = " + Theme.Body.Size
@@ -242,24 +305,24 @@ namespace AudioSwitch
             Label title = new Label();
             title.Text = "音频输出切换 · 快捷方式生成器";
             title.Font = Theme.Title;
-            title.ForeColor = Color.White;
+            title.ForeColor = Theme.TextPrimary;
             title.BackColor = Color.Transparent;
             title.AutoSize = true;
-            title.Location = new Point(24, 15);
+            title.Location = new Point(24, 16);
             header.Controls.Add(title);
 
             Label subtitle = new Label();
             subtitle.Text = "选择音频输出设备与图标，一键生成可切换 Windows 默认输出设备的桌面快捷方式";
             subtitle.Font = Theme.Subtitle;
-            subtitle.ForeColor = Color.FromArgb(0x9F, 0xB0, 0xC8);
+            subtitle.ForeColor = Theme.TextSecondary;
             subtitle.BackColor = Color.Transparent;
             subtitle.AutoSize = true;
-            subtitle.Location = new Point(25, 46);
+            subtitle.Location = new Point(26, 48);
             header.Controls.Add(subtitle);
 
             PictureBox logo = new PictureBox();
-            logo.Size = new Size(44, 44);
-            logo.Location = new Point(WindowWidth - 24 - 44, 17);
+            logo.Size = new Size(46, 46);
+            logo.Location = new Point(WindowWidth - 24 - 46, 17);
             logo.BackColor = Color.Transparent;
             logo.SizeMode = PictureBoxSizeMode.Zoom;
             try { logo.Image = IconLoader.LoadApplicationIcon(64).ToBitmap(); }
@@ -269,61 +332,80 @@ namespace AudioSwitch
 
         private void BuildDeviceCard()
         {
-            CardPanel card = new CardPanel("1    选择音频输出设备");
-            card.Location = new Point(20, 92);
-            card.Size = new Size(740, 264);
+            CardPanel card = new CardPanel("1", "选择音频输出设备");
+            card.Location = new Point(20, 94);
+            card.Size = new Size(740, 262);
             Controls.Add(card);
 
             _refreshButton = new FlatButton();
             _refreshButton.Text = "刷新列表";
             _refreshButton.Kind = ButtonKind.Ghost;
-            _refreshButton.Location = new Point(620, 10);
-            _refreshButton.Size = new Size(88, 28);
+            _refreshButton.Location = new Point(614, 12);
+            _refreshButton.Size = new Size(94, 30);
             _refreshButton.Font = Theme.Small;
             _refreshButton.Click += delegate { LoadDevices(); SetStatus("设备列表已刷新。", StatusKind.Info); };
             card.Controls.Add(_refreshButton);
 
+            // The device list lives inside a clipping viewport. A native ListBox
+            // always keeps a ~17px non-client scrollbar gutter painted with the
+            // system colour, which cannot be themed; the list is therefore made
+            // wider than this panel so the gutter falls outside the clip region and
+            // the thin scrollbar below takes its place.
+            Panel viewport = new Panel();
+            viewport.Location = new Point(14, 50);
+            viewport.Size = new Size(700, 196);
+            viewport.BackColor = Theme.Card;
+            card.Controls.Add(viewport);
+            _deviceViewport = viewport;
+
             _deviceList = new DeviceListBox();
-            _deviceList.Location = new Point(16, 48);
-            _deviceList.Size = new Size(708, 200);
+            _deviceList.Location = new Point(0, 0);
+            _deviceList.Size = new Size(700 + 24, 196);
+            _deviceList.VisibleWidth = 700;
             _deviceList.SelectedIndexChanged += delegate { OnDeviceSelectionChanged(); };
-            card.Controls.Add(_deviceList);
+            viewport.Controls.Add(_deviceList);
+
+            // A thin Windows 11 style indicator sits in the gutter the list leaves.
+            _deviceScroll = new ThinScrollBar();
+            _deviceScroll.Attach(_deviceList);
+            _deviceScroll.Location = new Point(718, 50);
+            _deviceScroll.Size = new Size(6, 196);
+            _deviceScroll.Visible = false;
+            _deviceList.ScrollChanged += delegate { _deviceScroll.RefreshState(); };
+            card.Controls.Add(_deviceScroll);
         }
 
         private void BuildIconCard()
         {
-            CardPanel card = new CardPanel("2    选择图标（可选）");
+            CardPanel card = new CardPanel("2", "选择图标（可选）");
             card.Location = new Point(20, 370);
             card.Size = new Size(740, 124);
             Controls.Add(card);
 
-            _iconPreview = new PictureBox();
-            _iconPreview.Location = new Point(16, 44);
+            _iconPreview = new PreviewTile();
+            _iconPreview.Location = new Point(18, 46);
             _iconPreview.Size = new Size(52, 52);
-            _iconPreview.SizeMode = PictureBoxSizeMode.Zoom;
-            _iconPreview.BackColor = Color.FromArgb(0xFA, 0xFB, 0xFC);
-            _iconPreview.BorderStyle = BorderStyle.FixedSingle;
             card.Controls.Add(_iconPreview);
 
-            _iconPathBox = new TextBox();
-            _iconPathBox.Location = new Point(80, 56);
-            _iconPathBox.Size = new Size(352, 28);
-            _iconPathBox.Font = Theme.Body;
-            _iconPathBox.BorderStyle = BorderStyle.FixedSingle;
-            _iconPathBox.TextChanged += delegate { UpdateIconPreview(); };
+            _iconPathBox = new RoundedField();
+            _iconPathBox.Placeholder = "留空则使用本程序自带图标";
+            _iconPathBox.Location = new Point(82, 56);
+            _iconPathBox.Size = new Size(350, 32);
+            _iconPathBox.TextChangedHandler += delegate { UpdateIconPreview(); };
             card.Controls.Add(_iconPathBox);
 
             _browseIconButton = new FlatButton();
             _browseIconButton.Text = "浏览图标…";
-            _browseIconButton.Location = new Point(444, 54);
-            _browseIconButton.Size = new Size(128, 32);
+            _browseIconButton.Location = new Point(442, 55);
+            _browseIconButton.Size = new Size(128, 34);
             _browseIconButton.Click += delegate { BrowseForIcon(); };
             card.Controls.Add(_browseIconButton);
 
             _clearIconButton = new FlatButton();
             _clearIconButton.Text = "使用默认图标";
-            _clearIconButton.Location = new Point(584, 54);
-            _clearIconButton.Size = new Size(124, 32);
+            _clearIconButton.Kind = ButtonKind.Ghost;
+            _clearIconButton.Location = new Point(578, 55);
+            _clearIconButton.Size = new Size(130, 34);
             _clearIconButton.Click += delegate
             {
                 _iconPathBox.Text = "";
@@ -332,70 +414,62 @@ namespace AudioSwitch
             card.Controls.Add(_clearIconButton);
 
             _iconHint = new Label();
-            _iconHint.Location = new Point(80, 92);
-            _iconHint.Size = new Size(628, 18);
+            _iconHint.Location = new Point(82, 92);
+            _iconHint.Size = new Size(626, 18);
             _iconHint.Font = Theme.Small;
             _iconHint.ForeColor = Theme.TextMuted;
             _iconHint.AutoEllipsis = true;
+            _iconHint.BackColor = Color.Transparent;
             card.Controls.Add(_iconHint);
         }
 
         private void BuildShortcutCard()
         {
-            CardPanel card = new CardPanel("3    快捷方式设置");
+            CardPanel card = new CardPanel("3", "快捷方式设置");
             card.Location = new Point(20, 508);
             card.Size = new Size(740, 162);
             Controls.Add(card);
 
-            card.Controls.Add(MakeLabel("快捷方式名称", 16, 46, 96));
+            card.Controls.Add(MakeLabel("快捷方式名称", 18, 52, 96));
 
-            _nameBox = new TextBox();
-            _nameBox.Location = new Point(116, 42);
-            _nameBox.Size = new Size(344, 28);
-            _nameBox.Font = Theme.Body;
-            _nameBox.BorderStyle = BorderStyle.FixedSingle;
-            _nameBox.TextChanged += delegate { OnShortcutNameEdited(); };
+            _nameBox = new RoundedField();
+            _nameBox.Location = new Point(118, 44);
+            _nameBox.Size = new Size(342, 32);
+            _nameBox.TextChangedHandler += delegate { OnShortcutNameEdited(); };
             card.Controls.Add(_nameBox);
 
-            card.Controls.Add(MakeLabel("快捷键", 476, 46, 48));
+            card.Controls.Add(MakeLabel("快捷键", 478, 52, 48));
 
-            _hotkeyBox = new ComboBox();
-            _hotkeyBox.Location = new Point(528, 42);
-            _hotkeyBox.Size = new Size(180, 28);
-            _hotkeyBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            _hotkeyBox.FlatStyle = FlatStyle.Flat;
-            _hotkeyBox.Font = Theme.Body;
-            _hotkeyBox.Items.AddRange(_hotkeyChoices);
-            _hotkeyBox.SelectedIndex = 0;
+            _hotkeyBox = new DropdownField(_hotkeyChoices);
+            _hotkeyBox.Location = new Point(530, 44);
+            _hotkeyBox.Size = new Size(178, 32);
             card.Controls.Add(_hotkeyBox);
 
-            card.Controls.Add(MakeLabel("保存位置", 16, 84, 96));
+            card.Controls.Add(MakeLabel("保存位置", 18, 90, 96));
 
-            _directoryBox = new TextBox();
-            _directoryBox.Location = new Point(116, 80);
-            _directoryBox.Size = new Size(436, 28);
-            _directoryBox.Font = Theme.Body;
-            _directoryBox.BorderStyle = BorderStyle.FixedSingle;
-            _directoryBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            _directoryBox = new RoundedField();
+            _directoryBox.Location = new Point(118, 82);
+            _directoryBox.Size = new Size(434, 32);
+            _directoryBox.Text = ShellFolders.Desktop();
             card.Controls.Add(_directoryBox);
 
             _browseDirectoryButton = new FlatButton();
             _browseDirectoryButton.Text = "浏览文件夹…";
-            _browseDirectoryButton.Location = new Point(560, 79);
-            _browseDirectoryButton.Size = new Size(148, 30);
+            _browseDirectoryButton.Location = new Point(560, 81);
+            _browseDirectoryButton.Size = new Size(148, 34);
             _browseDirectoryButton.Click += delegate { BrowseForDirectory(); };
             card.Controls.Add(_browseDirectoryButton);
 
-            _notifyCheck = MakeCheckBox("切换后显示通知", 16, 122, 176);
+            _notifyCheck = MakeCheckBox("切换后显示通知", 18, 124, 176);
             _notifyCheck.Checked = true;
             card.Controls.Add(_notifyCheck);
 
-            _allRolesCheck = MakeCheckBox("同时设置全部角色", 200, 122, 196);
+            _allRolesCheck = MakeCheckBox("同时设置全部角色", 202, 124, 196);
             _allRolesCheck.Checked = true;
             _allRolesCheck.CheckedChanged += delegate { UpdateRoleCheckState(); };
             card.Controls.Add(_allRolesCheck);
 
-            _installCheck = MakeCheckBox("复制程序到固定目录（推荐）", 404, 122, 304);
+            _installCheck = MakeCheckBox("复制程序到固定目录（推荐）", 406, 124, 304);
             _installCheck.Checked = true;
             card.Controls.Add(_installCheck);
 
@@ -419,14 +493,14 @@ namespace AudioSwitch
             _testButton = new FlatButton();
             _testButton.Text = "立即测试切换";
             _testButton.Location = new Point(20, 684);
-            _testButton.Size = new Size(116, 42);
+            _testButton.Size = new Size(122, 44);
             _testButton.Click += delegate { TestSwitch(); };
             Controls.Add(_testButton);
 
             _openFolderButton = new FlatButton();
             _openFolderButton.Text = "打开所在文件夹";
-            _openFolderButton.Location = new Point(144, 684);
-            _openFolderButton.Size = new Size(156, 42);
+            _openFolderButton.Location = new Point(150, 684);
+            _openFolderButton.Size = new Size(158, 44);
             _openFolderButton.Click += delegate { OpenOutputFolder(); };
             Controls.Add(_openFolderButton);
 
@@ -434,8 +508,8 @@ namespace AudioSwitch
             _createButton.Text = "一键生成快捷方式";
             _createButton.Kind = ButtonKind.Primary;
             _createButton.Font = Theme.ButtonBold;
-            _createButton.Location = new Point(570, 684);
-            _createButton.Size = new Size(190, 42);
+            _createButton.Location = new Point(566, 684);
+            _createButton.Size = new Size(194, 44);
             _createButton.Click += delegate { CreateShortcut(); };
             Controls.Add(_createButton);
 
@@ -445,6 +519,7 @@ namespace AudioSwitch
             _statusLabel.Font = Theme.Small;
             _statusLabel.ForeColor = Theme.TextSecondary;
             _statusLabel.AutoEllipsis = true;
+            _statusLabel.BackColor = Color.Transparent;
             Controls.Add(_statusLabel);
         }
 
@@ -456,18 +531,18 @@ namespace AudioSwitch
             label.Size = new Size(width, 20);
             label.Font = Theme.Body;
             label.ForeColor = Theme.TextSecondary;
+            label.BackColor = Color.Transparent;
             return label;
         }
 
-        private static CheckBox MakeCheckBox(string text, int x, int y, int width)
+        private static FlatCheckBox MakeCheckBox(string text, int x, int y, int width)
         {
-            CheckBox box = new CheckBox();
+            FlatCheckBox box = new FlatCheckBox();
             box.Text = text;
             box.Location = new Point(x, y);
-            box.Size = new Size(width, 24);
+            box.Size = new Size(width, 26);
             box.Font = Theme.Body;
             box.ForeColor = Theme.TextPrimary;
-            box.FlatStyle = FlatStyle.Flat;
             return box;
         }
 
@@ -497,12 +572,7 @@ namespace AudioSwitch
             foreach (AudioEndpoint device in devices) _deviceList.Items.Add(device);
             _deviceList.EndUpdate();
 
-            List<string> defaultIds = new List<string>();
-            foreach (ERole role in AudioManager.AllRoles)
-            {
-                string id = AudioManager.GetDefaultDeviceId(role);
-                if (!string.IsNullOrEmpty(id) && !defaultIds.Contains(id)) defaultIds.Add(id);
-            }
+            List<string> defaultIds = CollectDefaultIds();
             _deviceList.SetDefaultIds(defaultIds);
 
             int index = -1;
@@ -539,6 +609,9 @@ namespace AudioSwitch
 
             if (index >= 0) _deviceList.SelectedIndex = index;
             else SetStatus("未找到任何音频输出设备。", StatusKind.Error);
+
+            // The list may now overflow (or stop overflowing), so resync the thumb.
+            _deviceScroll.RefreshState();
         }
 
         private void OnDeviceSelectionChanged()
@@ -605,7 +678,9 @@ namespace AudioSwitch
         {
             // When "all roles" is off the shortcut only touches console + multimedia,
             // leaving the communications (VoIP) device alone.
-            _allRolesCheck.ForeColor = _allRolesCheck.Checked ? Theme.TextPrimary : Theme.TextSecondary;
+            _allRolesCheck.ForeColor = _allRolesCheck.Checked
+                ? Theme.TextPrimary : Theme.TextSecondary;
+            _allRolesCheck.Invalidate();
         }
 
         private RoleSelection SelectedRoles
@@ -621,7 +696,7 @@ namespace AudioSwitch
         {
             get
             {
-                string value = _hotkeyBox.SelectedItem as string;
+                string value = _hotkeyBox.SelectedItem;
                 if (string.IsNullOrEmpty(value) || value == "无") return "";
                 return value;
             }
@@ -651,16 +726,11 @@ namespace AudioSwitch
 
         private void UpdateIconPreview()
         {
-            if (_iconPreview.Image != null)
-            {
-                _iconPreview.Image.Dispose();
-                _iconPreview.Image = null;
-            }
-
+            // PreviewTile owns the image and disposes the previous one on assignment.
             string path = _iconPathBox.Text.Trim();
             if (path.Length == 0)
             {
-                _iconPreview.Image = IconLoader.LoadApplicationPreview(Theme.S(48));
+                _iconPreview.Preview = IconLoader.LoadApplicationPreview(Theme.S(48));
                 _iconHint.ForeColor = Theme.TextMuted;
                 _iconHint.Text = "未选择图标，快捷方式将使用本程序自带图标。";
                 return;
@@ -672,13 +742,13 @@ namespace AudioSwitch
             {
                 // A preview failure must never block generating the shortcut: the
                 // shell reads the .ico itself and copes with more than we can draw.
-                _iconPreview.Image = IconLoader.LoadApplicationPreview(Theme.S(48));
+                _iconPreview.Preview = IconLoader.LoadApplicationPreview(Theme.S(48));
                 _iconHint.ForeColor = Theme.Danger;
                 _iconHint.Text = error;
                 return;
             }
 
-            _iconPreview.Image = preview;
+            _iconPreview.Preview = preview;
             _iconHint.ForeColor = Theme.Success;
             _iconHint.Text = "已选择：快捷方式将使用该图标。";
         }
@@ -885,9 +955,7 @@ namespace AudioSwitch
 
             try
             {
-                string installDirectory = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "AudioSwitch");
+                string installDirectory = Path.Combine(ShellFolders.LocalAppData(), "AudioSwitch");
                 string installed = Path.Combine(installDirectory, Path.GetFileName(current));
 
                 if (string.Equals(Path.GetFullPath(current), Path.GetFullPath(installed),
@@ -948,7 +1016,7 @@ namespace AudioSwitch
             switch (kind)
             {
                 case StatusKind.Success: color = Theme.Success; break;
-                case StatusKind.Warn: color = Color.FromArgb(0xB4, 0x53, 0x09); break;
+                case StatusKind.Warn: color = Theme.Warning; break;
                 case StatusKind.Error: color = Theme.Danger; break;
                 default: color = Theme.TextSecondary; break;
             }
