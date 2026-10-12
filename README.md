@@ -14,6 +14,9 @@
 [**⬇ 下载最新版 `AudioSwitch.exe`**](https://github.com/chancoki/sound-device-switcher-desktop/releases/latest)
 —— 单文件、免安装，双击即用；不需要 Node.js，也不需要额外安装运行时。
 
+> ⚠️ **首次运行会弹出「Windows 已保护你的电脑」** —— 这是 SmartScreen 对**未签名**程序的常规提示，不是病毒告警。点「**更多信息**」→「**仍要运行**」即可。
+> 原因与处理办法见 [常见问题](#q-首次运行弹出-smartscreen-警告怎么办)。
+
 ---
 
 ## 目录
@@ -298,6 +301,40 @@ powershell -ExecutionPolicy Bypass -File tools\capture-window.ps1 `
 ---
 
 ## 常见问题
+
+### Q: 首次运行弹出 SmartScreen 警告怎么办
+
+**不是病毒，也不代表程序有问题。** 这是 Windows Defender SmartScreen 对所有**未签名**且**从网上下载**的程序都会给出的提示，与文件是否安全无关。
+
+> 提示原文通常是：
+> *Microsoft Defender SmartScreen 阻止了无法识别的应用启动…… 发行者：发布者未知*
+
+原因有两个，缺一不可：
+
+1. **本程序没有数字签名。** 代码签名证书需要付费（OV 证书约 $150–300/年），这个免费开源小工具没有购买，所以 Windows 无法识别「发布者」。你看到的「发布者未知」就是这个意思。
+2. **文件是从浏览器下载的。** 浏览器会给下载的文件打上「来自 Internet」的标记，SmartScreen 只审查带此标记的文件。**自己用 `build.ps1` 构建出来的 exe 不会有这个标记，因此从不弹窗** —— 这也是为什么同一份代码，本地跑没事、下载后却会提示。
+
+#### 怎么运行
+
+点提示框里的「**更多信息**」→「**仍要运行**」即可。
+
+如果下载后想彻底消除这个标记，也可以在 PowerShell 里执行一次：
+
+```powershell
+Unblock-File "$env:USERPROFILE\Downloads\AudioSwitch.exe"
+```
+
+#### 想确认文件没被篡改
+
+发布页上每个版本都附了 SHA256，可以自行比对：
+
+```powershell
+Get-FileHash "$env:USERPROFILE\Downloads\AudioSwitch.exe" -Algorithm SHA256
+```
+
+结果应与 [Releases](https://github.com/chancoki/sound-device-switcher-desktop/releases/latest) 页面里写的一致。程序本体是纯 .NET 托管程序集，没有捆绑任何第三方组件。
+
+> 💡 这个提示会**随每个新版本重新出现**：未签名的文件无法继承上一版的信誉，每次都要重新累积。这是 SmartScreen 的设计，不是本程序特有的问题。
 
 ### Q: 双击快捷方式没反应？
 

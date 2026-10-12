@@ -124,6 +124,16 @@
 - **PowerShell 不会等待 GUI 子系统程序**，且 `Invoke-Item`／`Start-Process` 打开 `.lnk` 会阻塞到子进程结束。要在脚本里安全地跑 GUI exe，用 `Start-Process -Wait -RedirectStandardOutput <文件>`（重定向后不会继承并占用调用方的管道）。
 - 程序是 `/target:winexe`（保证快捷方式启动不闪黑框），因此 `Console.WriteLine` 需要一个附加控制台的过程：`EnsureConsole()` 会先 `AttachConsole(ATTACH_PARENT_PROCESS)`；若标准句柄本身有效则直接写入（管道/重定向时用 UTF-8 保证编码稳定，真实控制台则用其代码页），否则打开 `CONOUT$`。没有任何控制台时保持沉默。
 
+### 分发与签名相关
+
+- **发布出去的 exe 没有数字签名，因此从浏览器下载后会触发 SmartScreen「Windows 已保护你的电脑 / 发布者未知」。** 这不是病毒告警，也**不是程序缺陷**，任何未签名的下载文件都会这样。触发需要两个条件同时满足：文件未签名 + 文件带 Mark-of-the-Web（`Zone.Identifier`，`ZoneId=3`）。自己 `build.ps1` 构建的 exe 没有 MOTW，所以本地运行从不弹窗 —— 排查时不要误判成「新版改坏了」。
+- 实测三个版本（v1.0.0 / v1.0.1 / v1.1.0）的 `Get-AuthenticodeSignature` 均为 `NotSigned`，行为一致。
+- **未签名文件无法继承信誉**：每个新版本都要从零重新累积，所以提示会随每次发版重现。
+- 验证下载件是否被篡改，比对 GitHub Release 记录的 `digest`（`sha256:...`）与本地 `Get-FileHash`。
+- 消除提示的正规途径按成本排序：Microsoft Store（MSIX，免费，微软重新签名）> [SignPath Foundation](https://signpath.io)（**开源项目免费**，OV 级）> Azure 工件签名（约 $9.99/月，个人开发者目前仅限美国和加拿大）> OV 证书（$150–300/年，私钥须存硬件令牌/HSM）。**自签名证书对公众分发无效**（行为等同未签名）。
+- **EV 证书自 2024 年起不再绕过 SmartScreen**，与 OV 走同样的信誉累积，不要再为绕开提示而多付钱。
+- 本机 Defender 实时保护处于关闭状态（`RealTimeProtectionEnabled: False`），因此**无法在本机复现该弹窗**，只能确认其两个前置条件成立。
+
 ### 环境相关
 
 - 本机的 DSH 沙箱会限制**由 agent 启动的子进程**的写入范围：子进程只有在工作区内才能写文件，写桌面 / `%TEMP%` / `%LOCALAPPDATA%` 均返回 `E_ACCESSDENIED`。这是环境限制，不是程序缺陷 —— 用户正常双击运行时不受影响。若在沙箱内验证，请把 `--dir` 指向工作区内的目录。
